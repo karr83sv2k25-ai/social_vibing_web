@@ -190,8 +190,8 @@ const MessageRow = memo(({
           </View>
         )}
 
-        {/* Voice Room Message */}
-        {(msg.type === 'voiceChat' || isVoiceRoomType(msg.type)) && (
+        {/* Voice Room Message - Only show active rooms */}
+        {(msg.type === 'voiceChat' || isVoiceRoomType(msg.type)) && msg.isActive && (
           <TouchableOpacity
             style={styles.voiceChatMessageContainer}
             onPress={() => handleJoinVoiceChat(msg.id, msg.roomId, msg.participants || [])}
@@ -202,12 +202,10 @@ const MessageRow = memo(({
                 <MaterialCommunityIcons name="waveform" size={28} color="#00FFFF" />
               </View>
               <Text style={styles.voiceChatTitle} numberOfLines={1} ellipsizeMode="tail">Live Voice Room</Text>
-              {msg.isActive && (
-                <View style={styles.liveIndicator}>
-                  <View style={styles.liveDot} />
-                  <Text style={styles.liveText}>LIVE</Text>
-                </View>
-              )}
+              <View style={styles.liveIndicator}>
+                <View style={styles.liveDot} />
+                <Text style={styles.liveText}>LIVE</Text>
+              </View>
             </View>
             <Text style={styles.voiceChatText} numberOfLines={2} ellipsizeMode="tail">
               {msg.sender || 'User'} started a voice room
@@ -229,8 +227,8 @@ const MessageRow = memo(({
           </TouchableOpacity>
         )}
 
-        {/* Screening Room Message */}
-        {msg.type === 'screeningRoom' && (
+        {/* Screening Room Message - Only show active rooms */}
+        {msg.type === 'screeningRoom' && msg.isActive && (
           <TouchableOpacity
             style={styles.screeningRoomMessageContainer}
             onPress={() => handleJoinScreeningRoom(msg.id, msg.roomId, msg.participants || [])}
@@ -241,12 +239,10 @@ const MessageRow = memo(({
                 <MaterialCommunityIcons name="television-play" size={28} color="#FF00FF" />
               </View>
               <Text style={styles.screeningRoomTitle} numberOfLines={1} ellipsizeMode="tail">Screening Room</Text>
-              {msg.isActive && (
-                <View style={styles.liveIndicator}>
-                  <View style={styles.liveDot} />
-                  <Text style={styles.liveText}>LIVE</Text>
-                </View>
-              )}
+              <View style={styles.liveIndicator}>
+                <View style={styles.liveDot} />
+                <Text style={styles.liveText}>LIVE</Text>
+              </View>
             </View>
             <Text style={styles.screeningRoomText} numberOfLines={2} ellipsizeMode="tail">
               {msg.sender || 'User'} started a screening room
@@ -268,8 +264,8 @@ const MessageRow = memo(({
           </TouchableOpacity>
         )}
 
-        {/* Roleplay Message */}
-        {msg.type === 'roleplay' && (
+        {/* Roleplay Message - Only show active sessions */}
+        {msg.type === 'roleplay' && msg.isActive && (
           <TouchableOpacity
             style={styles.roleplayMessageContainer}
             onPress={() => {
@@ -490,7 +486,6 @@ export default function GroupInfoScreen() {
   const [voiceSound, setVoiceSound] = useState(null);
   const [playingVideoId, setPlayingVideoId] = useState(null);
   const [videoRefs, setVideoRefs] = useState({});
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showGiftOptions, setShowGiftOptions] = useState(false);
   const [selectedGiftOption, setSelectedGiftOption] = useState(null);
   const [activeVoiceChats, setActiveVoiceChats] = useState({}); // Track active voice chats: { messageId: [participantIds] }
@@ -3920,51 +3915,6 @@ export default function GroupInfoScreen() {
   };
 
   // Handle Start Audio Call
-  const handleStartAudioCall = async () => {
-    if (!currentUser?.id || !communityId) {
-      Alert.alert('Error', 'Unable to start audio call');
-      return;
-    }
-
-    try {
-      // db is now imported globally
-      
-      // Create a new audio room
-      const roomId = `room_${Date.now()}_${currentUser.id}`;
-      const roomRef = doc(db, 'audio_calls', communityId, 'rooms', roomId);
-      
-      const now = new Date().toISOString();
-      
-      await setDoc(roomRef, {
-        communityId: communityId,
-        communityName: community?.name || groupTitle || 'Community',
-        createdBy: currentUser.id,
-        createdByName: currentUser.name,
-        createdAt: now,
-        updatedAt: now,
-        participants: [{
-          userId: currentUser.id,
-          userName: currentUser.name,
-          profileImage: currentUser.profileImage,
-          joinedAt: now,
-          isMuted: false,
-          isSpeaking: false,
-        }],
-        isActive: true,
-      });
-
-      // Navigate to audio call screen
-      navigation.navigate('GroupAudioCall', {
-        communityId: communityId,
-        roomId: roomId,
-        groupTitle: community?.name || groupTitle || 'Community',
-      });
-    } catch (e) {
-      console.log('Error starting audio call:', e);
-      Alert.alert('Error', 'Failed to start audio call: ' + e.message);
-    }
-  };
-
   return (
     <View style={styles.container}>
       {/* Top Bar */}
@@ -3973,7 +3923,7 @@ export default function GroupInfoScreen() {
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.topBarTitle}>{community?.name || groupTitle || 'Community'}</Text>
-        <View style={{width: 24}} />
+        <View style={{ width: 24 }} />
       </View>
 
       {loading ? (
@@ -4706,25 +4656,11 @@ export default function GroupInfoScreen() {
                           </TouchableOpacity>
                         )}
 
-                        {/* Emoji Icon */}
-                        <TouchableOpacity 
-                          onPress={() => {
-                            Keyboard.dismiss();
-                            setShowEmojiPicker(true);
-                            setShowGiftOptions(false);
-                            setShowColorPicker(false);
-                          }}
-                          style={styles.chatActionIcon}
-                        >
-                          <Ionicons name="happy-outline" size={24} color={showEmojiPicker ? "#8B2EF0" : "#ccc"} />
-                        </TouchableOpacity>
-
                         {/* Party Icon - Opens Feature Modal (Voice, Screening, Roleplay) */}
                         <TouchableOpacity 
                           onPress={() => {
                             Keyboard.dismiss();
                             setShowFeatureModal(true);
-                            setShowEmojiPicker(false);
                             setShowGiftOptions(false);
                             setShowColorPicker(false);
                           }}
@@ -4738,7 +4674,6 @@ export default function GroupInfoScreen() {
                           onPress={() => {
                             Keyboard.dismiss();
                             setShowColorPicker(!showColorPicker);
-                            setShowEmojiPicker(false);
                             setShowGiftOptions(false);
                           }}
                           style={styles.chatActionIcon}
@@ -4757,7 +4692,6 @@ export default function GroupInfoScreen() {
                           value={chatInput}
                           onChangeText={setChatInput}
                           onFocus={() => {
-                            setShowEmojiPicker(false);
                             setShowGiftOptions(false);
                             setShowColorPicker(false);
                             // Reset scrolling state and scroll to bottom
@@ -4798,34 +4732,6 @@ export default function GroupInfoScreen() {
                           )}
                         </TouchableOpacity>
                       </View>
-
-                      {/* Emoji Picker - Shows instead of keyboard */}
-                      {showEmojiPicker && (
-                        <View style={styles.emojiPickerContainer}>
-                          <ScrollView 
-                            horizontal 
-                            showsHorizontalScrollIndicator={false}
-                            style={styles.emojiPickerScroll}
-                            contentContainerStyle={styles.emojiPickerContent}
-                          >
-                            {['😀', '😂', '🥰', '😍', '🤔', '😎', '🥳', '😭', '😡', '🤯', '👍', '👎', '❤️', '🔥', '💯', '✨', '🎉', '🎊', '🎈', '🎁', '🎂', '🍕', '🍔', '🍟', '🍰', '☕', '🚀', '⭐', '🌟', '💫'].map((emoji, index) => (
-                              <TouchableOpacity
-                                key={index}
-                                style={styles.emojiItem}
-                                onPress={() => {
-                                  setChatInput(prev => prev + emoji);
-                                  setShowEmojiPicker(false);
-                                  if (inputRef.current) {
-                                    inputRef.current.focus();
-                                  }
-                                }}
-                              >
-                                <Text style={styles.emojiText}>{emoji}</Text>
-                              </TouchableOpacity>
-                            ))}
-                          </ScrollView>
-                        </View>
-                      )}
 
                       {/* Color Picker - Shows instead of keyboard */}
                       {showColorPicker && (
@@ -6815,32 +6721,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'transparent',
-  },
-  emojiPickerContainer: {
-    backgroundColor: '#1e1e1e',
-    borderTopWidth: 1,
-    borderTopColor: '#222',
-    maxHeight: 120,
-    paddingVertical: 8,
-  },
-  emojiPickerScroll: {
-    flexGrow: 0,
-  },
-  emojiPickerContent: {
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    gap: 8,
-  },
-  emojiItem: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#2a2a2a',
-  },
-  emojiText: {
-    fontSize: 24,
   },
   partyEmoji: {
     fontSize: 24,

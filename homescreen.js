@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -26,6 +26,7 @@ import {
   getDocs,
   query,
   orderBy,
+  limit,
   runTransaction,
   updateDoc,
   setDoc,
@@ -105,6 +106,7 @@ const Post = ({
   onComment, 
   onShare, 
   onFollow, 
+  onDelete,
   isLiked, 
   isFollowing, 
   likeBusy, 
@@ -113,6 +115,22 @@ const Post = ({
 }) => {
   // Don't show follow button if post is by current logged-in user
   const showFollowButton = post.authorId && onFollow && currentUser?.id && post.authorId !== currentUser.id;
+  const canDelete = post.authorId && currentUser?.id && post.authorId === currentUser.id;
+  
+  const handleDeletePress = () => {
+    Alert.alert(
+      'Delete Post',
+      'Are you sure you want to delete this post? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: () => onDelete && onDelete(post)
+        }
+      ]
+    );
+  };
   
   return (
     <View style={styles.postContainer}>
@@ -133,21 +151,31 @@ const Post = ({
             </Text>
           </View>
         </View>
-        {showFollowButton && (
-          <TouchableOpacity
-            style={[
-              styles.followButton,
-              isFollowing && styles.followButtonFollowing,
-              followBusy && { opacity: 0.6 }
-            ]}
-            onPress={() => onFollow(post.authorId)}
-            disabled={followBusy}
-          >
-            <Text style={[styles.followText, isFollowing && styles.followTextFollowing]}>
-              {isFollowing ? 'Following' : 'Follow'}
-            </Text>
-          </TouchableOpacity>
-        )}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {canDelete && (
+            <TouchableOpacity
+              style={styles.deleteButton}
+              onPress={handleDeletePress}
+            >
+              <Ionicons name="trash-outline" size={20} color="#ff4b6e" />
+            </TouchableOpacity>
+          )}
+          {showFollowButton && (
+            <TouchableOpacity
+              style={[
+                styles.followButton,
+                isFollowing && styles.followButtonFollowing,
+                followBusy && { opacity: 0.6 }
+              ]}
+              onPress={() => onFollow(post.authorId)}
+              disabled={followBusy}
+            >
+              <Text style={[styles.followText, isFollowing && styles.followTextFollowing]}>
+                {isFollowing ? 'Following' : 'Follow'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* Blog Post - Show Title and Content */}
@@ -161,12 +189,20 @@ const Post = ({
       {/* Image Post - Show Image and Caption */}
       {post.type === 'image' && (
         <>
-          {post.imageUri && (
+          {post.imageUri ? (
             <Image
               source={{ uri: post.imageUri }}
               style={styles.postImageFull}
               resizeMode="cover"
+              onError={(error) => {
+                console.log('Image load error for post:', post.id, error.nativeEvent.error);
+              }}
             />
+          ) : (
+            <View style={styles.noImagePlaceholder}>
+              <Ionicons name="image-outline" size={48} color="#666" />
+              <Text style={styles.noImageText}>No image available</Text>
+            </View>
           )}
           {post.caption && (
             <Text style={styles.postText}>{post.caption}</Text>
@@ -208,7 +244,8 @@ const Post = ({
   );
 };
 
-export default function HomeScreen({ navigation }) {
+// OPTIMIZATION: Export memoized component to prevent unnecessary re-renders
+const HomeScreen = React.memo(({ navigation }) => {
   const [activeButton, setActiveButton] = useState(null);
   const [userName, setUserName] = useState('');
   const [profileImage, setProfileImage] = useState(null);
@@ -310,19 +347,20 @@ export default function HomeScreen({ navigation }) {
     const fetchAllPosts = async () => {
       setLoading(true);
       try {
-        // db is now imported globally
-        const communitiesSnapshot = await getDocs(collection(db, 'communities'));
-        const communities = communitiesSnapshot.docs;
+        // OPTIMIZATION: Limit communities fetch to 10 and add error handling
+        const communitiesQuery = query(collection(db, 'communities'), limit(10));
+        const communitiesSnapshot = await getDocs(communitiesQuery);
         
         const allPostsData = [];
         
-        for (const commDoc of communities) {
+        for (const commDoc of communitiesSnapshot.docs) {
           const commId = commDoc.id;
           
-          // Fetch blogs
+          // Fetch blogs with limit
           try {
             const blogsCol = collection(db, 'communities', commId, 'blogs');
-            const blogsSnapshot = await getDocs(query(blogsCol, orderBy('createdAt', 'desc')));
+            const blogsQuery = query(blogsCol, orderBy('createdAt', 'desc'), limit(20)); // Limit to 20 blogs per community
+            const blogsSnapshot = await getDocs(blogsQuery);
             
             for (const blogDoc of blogsSnapshot.docs) {
               const blogData = blogDoc.data();
@@ -368,7 +406,8 @@ export default function HomeScreen({ navigation }) {
           // Fetch posts
           try {
             const postsCol = collection(db, 'communities', commId, 'posts');
-            const postsSnapshot = await getDocs(query(postsCol, orderBy('createdAt', 'desc')));
+            const postsQuery = query(postsCol, orderBy('createdAt', 'desc'), limit(20)); // Limit to 20 posts per community
+            const postsSnapshot = await getDocs(postsQuery);
             
             for (const postDoc of postsSnapshot.docs) {
               const postData = postDoc.data();
@@ -399,6 +438,8 @@ export default function HomeScreen({ navigation }) {
                 type: 'image',
                 communityId: commId,
                 ...postData,
+                // Ensure imageUri is set from various possible field names
+                imageUri: postData.imageUri || postData.imageUrl || postData.mediaUrl || postData.image || null,
                 authorName,
                 authorImage,
                 username,
@@ -419,7 +460,8 @@ export default function HomeScreen({ navigation }) {
           return bTime - aTime;
         });
         
-        setAllPosts(allPostsData);
+        // OPTIMIZATION: Limit total posts to 50 most recent
+        setAllPosts(allPostsData.slice(0, 50));
         setLoading(false);
       } catch (e) {
         console.log('Error fetching all posts:', e);
@@ -441,23 +483,30 @@ export default function HomeScreen({ navigation }) {
       const collectionName = post.type === 'blog' ? 'blogs' : 'posts';
       const postRef = doc(db, 'communities', post.communityId, collectionName, post.id);
       
-      const unsubscribe = onSnapshot(postRef, (snapshot) => {
-        if (snapshot.exists()) {
-          const data = snapshot.data();
-          setAllPosts((prev) =>
-            prev.map((p) =>
-              p.id === post.id && p.communityId === post.communityId
-                ? {
-                    ...p,
-                    likes: typeof data.likes === 'number' ? data.likes : 0,
-                    comments: typeof data.comments === 'number' ? data.comments : 0,
-                    likedBy: Array.isArray(data.likedBy) ? data.likedBy : [],
-                  }
-                : p
-            )
-          );
+      const unsubscribe = onSnapshot(
+        postRef,
+        (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data();
+            setAllPosts((prev) =>
+              prev.map((p) =>
+                p.id === post.id && p.communityId === post.communityId
+                  ? {
+                      ...p,
+                      likes: typeof data.likes === 'number' ? data.likes : 0,
+                      comments: typeof data.comments === 'number' ? data.comments : 0,
+                      likedBy: Array.isArray(data.likedBy) ? data.likedBy : [],
+                    }
+                  : p
+              )
+            );
+          }
+        },
+        (error) => {
+          console.log(`[Firestore] Error in post snapshot listener for ${post.id}:`, error.code);
+          // Silently ignore permission errors for real-time updates
         }
-      });
+      );
       
       unsubscribes.push(unsubscribe);
     });
@@ -477,15 +526,57 @@ export default function HomeScreen({ navigation }) {
     // db is now imported globally
     const followCol = collection(db, 'users', currentUser.id, 'following');
     
-    const unsubscribe = onSnapshot(followCol, (snapshot) => {
-      const ids = snapshot.docs.map((docSnap) => docSnap.id);
-      setFollowingUserIds(ids);
-    });
+    const unsubscribe = onSnapshot(
+      followCol,
+      (snapshot) => {
+        const ids = snapshot.docs.map((docSnap) => docSnap.id);
+        setFollowingUserIds(ids);
+      },
+      (error) => {
+        console.log('[Firestore] Error in following snapshot listener:', error.code);
+        setFollowingUserIds([]);
+      }
+    );
 
     return () => {
       unsubscribe();
     };
   }, [currentUser?.id]);
+
+  // Filter posts based on active tab
+  const filteredPosts = useMemo(() => {
+    if (activeButton === null) {
+      // No tab selected, show all posts (For You)
+      return allPosts;
+    }
+
+    const tabName = buttons[activeButton];
+
+    switch (tabName) {
+      case 'ForYou':
+        // Show all posts
+        return allPosts;
+      
+      case 'Following':
+        // Show posts only from users the current user is following
+        return allPosts.filter(post => 
+          post.authorId && followingUserIds.includes(post.authorId)
+        );
+      
+      case 'Community':
+        // Show posts from communities the user has joined
+        // For now, show all community posts (can be refined with membership data)
+        return allPosts;
+      
+      case "Community's":
+        // Show posts from specific communities
+        // For now, show all posts (can be refined based on specific logic)
+        return allPosts;
+      
+      default:
+        return allPosts;
+    }
+  }, [activeButton, allPosts, followingUserIds]);
 
   // Helper function to get post document reference
   const getPostDocRef = (db, post) => {
@@ -575,8 +666,10 @@ export default function HomeScreen({ navigation }) {
       
       const q = query(commentsCol, orderBy('createdAt', 'desc'));
       
-      const unsubscribe = onSnapshot(q, async (snapshot) => {
-        const commentsPromises = snapshot.docs.map(async (docSnap) => {
+      const unsubscribe = onSnapshot(
+        q,
+        async (snapshot) => {
+          const commentsPromises = snapshot.docs.map(async (docSnap) => {
           const commentData = docSnap.data();
           let userProfileImage = commentData.userImage || null;
           
@@ -753,6 +846,37 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
+  const handleDeletePost = async (post) => {
+    if (!currentUser?.id || !post?.id || !post.communityId) {
+      return;
+    }
+
+    // Verify user owns the post
+    if (post.authorId !== currentUser.id) {
+      Alert.alert('Permission Denied', 'You can only delete your own posts.');
+      return;
+    }
+
+    try {
+      // db is now imported globally
+      const collectionName = post.type === 'blog' ? 'blogs' : 'posts';
+      const postRef = doc(db, 'communities', post.communityId, collectionName, post.id);
+      
+      // Delete the post
+      await deleteDoc(postRef);
+      
+      // Remove from local state
+      setAllPosts((prev) => 
+        prev.filter(p => !(p.id === post.id && p.communityId === post.communityId))
+      );
+      
+      Alert.alert('Success', 'Post deleted successfully.');
+    } catch (e) {
+      console.log('Error deleting post:', e);
+      Alert.alert('Error', 'Unable to delete post. Please try again.');
+    }
+  };
+
   return (
     <>
     <ScrollView 
@@ -852,13 +976,20 @@ export default function HomeScreen({ navigation }) {
           <ActivityIndicator size="large" color="#08FFE2" />
           <Text style={{ color: '#fff', marginTop: 10 }}>Loading posts...</Text>
         </View>
-      ) : allPosts.length === 0 ? (
+      ) : filteredPosts.length === 0 ? (
         <View style={{ padding: 20, alignItems: 'center' }}>
           <Ionicons name="document-text-outline" size={40} color="#666" />
-          <Text style={{ color: '#888', marginTop: 10 }}>No posts found</Text>
+          <Text style={{ color: '#888', marginTop: 10 }}>
+            {activeButton === 1 ? 'No posts from people you follow' : 'No posts found'}
+          </Text>
+          {activeButton === 1 && (
+            <Text style={{ color: '#666', marginTop: 5, fontSize: 12 }}>
+              Follow some users to see their posts here
+            </Text>
+          )}
         </View>
       ) : (
-        allPosts.map((post) => {
+        filteredPosts.map((post) => {
           const isLiked = Array.isArray(post.likedBy) && currentUser?.id
             ? post.likedBy.includes(currentUser.id)
             : false;
@@ -877,6 +1008,7 @@ export default function HomeScreen({ navigation }) {
               onComment={handleCommentPress}
               onShare={handleSharePost}
               onFollow={handleToggleFollow}
+              onDelete={handleDeletePost}
               isLiked={isLiked}
               isFollowing={isFollowing}
               likeBusy={likeBusy}
@@ -1067,7 +1199,7 @@ export default function HomeScreen({ navigation }) {
     </Modal>
     </>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000', paddingTop: 50 },
@@ -1132,6 +1264,16 @@ const styles = StyleSheet.create({
   },
   followText: { color: '#000', fontWeight: '700', fontSize: 14 },
   followTextFollowing: { color: '#8B2EF0' },
+  deleteButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#2a1a1a',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ff4b6e33',
+  },
   postText: { color: '#ccc', fontSize: 13, lineHeight: 18, marginBottom: 12 },
   postImage: { height: 100, borderRadius: 10, resizeMode: 'cover' },
   postImageFull: {
@@ -1139,6 +1281,23 @@ const styles = StyleSheet.create({
     height: 250,
     borderRadius: 12,
     marginBottom: 12,
+  },
+  noImagePlaceholder: {
+    width: '100%',
+    height: 250,
+    borderRadius: 12,
+    marginBottom: 12,
+    backgroundColor: '#1a1a1a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#333',
+    borderStyle: 'dashed',
+  },
+  noImageText: {
+    color: '#666',
+    fontSize: 14,
+    marginTop: 8,
   },
   postFooter: { 
     flexDirection: 'row', 
@@ -1301,6 +1460,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 });
+
+export default HomeScreen;
 
 
 

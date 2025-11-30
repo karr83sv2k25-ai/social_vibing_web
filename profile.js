@@ -81,6 +81,9 @@ export default function ProfileScreen() {
   const [isOwnProfile, setIsOwnProfile] = useState(false);
   const [followingCount, setFollowingCount] = useState(0);
   const [followersCount, setFollowersCount] = useState(0);
+  const [lastClaimDate, setLastClaimDate] = useState(null);
+  const [canClaimToday, setCanClaimToday] = useState(false);
+  const [claimingReward, setClaimingReward] = useState(false);
 
   useEffect(() => {
     const auth = getAuth(app);
@@ -98,6 +101,24 @@ export default function ProfileScreen() {
     // Check if viewing own profile
     const ownProfile = currentUser && targetUserId === currentUser.uid;
     setIsOwnProfile(ownProfile);
+
+    // Check if user can claim today's reward
+    const checkClaimStatus = (userDoc) => {
+      const lastClaim = userDoc.lastRewardClaim?.toDate?.() || userDoc.lastRewardClaim;
+      setLastClaimDate(lastClaim);
+      
+      if (!lastClaim) {
+        setCanClaimToday(true);
+        return;
+      }
+      
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const lastClaimDay = new Date(lastClaim);
+      lastClaimDay.setHours(0, 0, 0, 0);
+      
+      setCanClaimToday(today > lastClaimDay);
+    };
 
     const userRef = doc(db, 'users', targetUserId);
 
@@ -121,6 +142,7 @@ export default function ProfileScreen() {
         if (snap.exists()) {
           const data = snap.data();
           setUserData(data);
+          checkClaimStatus(data);
           
           // Cache the profile data
           await CacheManager.saveUserProfile(targetUserId, data);
@@ -172,6 +194,62 @@ export default function ProfileScreen() {
 
     return () => unsubscribe();
   }, [userId]);
+
+  // Handle daily reward claim
+  const handleClaimReward = async () => {
+    if (!isOwnProfile || !canClaimToday || claimingReward) {
+      if (!canClaimToday) {
+        Alert.alert('Already Claimed', 'You have already claimed your reward today. Come back tomorrow!');
+      }
+      return;
+    }
+
+    try {
+      setClaimingReward(true);
+      const auth = getAuth(app);
+      const currentUser = auth.currentUser;
+      
+      if (!currentUser) {
+        Alert.alert('Error', 'Please login to claim rewards');
+        return;
+      }
+
+      const userRef = doc(db, 'users', currentUser.uid);
+      
+      // Update user's coins and last claim date
+      await updateDoc(userRef, {
+        coins: increment(50), // Give 50 coins as daily reward
+        lastRewardClaim: new Date(),
+        totalRewardsClaimed: increment(1)
+      });
+
+      // Update local state
+      setCanClaimToday(false);
+      setLastClaimDate(new Date());
+      
+      // Show success message
+      Alert.alert(
+        'Reward Claimed!',
+        'You received 50 coins! Keep your streak going by claiming tomorrow.',
+        [{ text: 'Awesome!', style: 'default' }]
+      );
+      
+      // Update user data to reflect new coin balance
+      if (userData) {
+        setUserData(prev => ({
+          ...prev,
+          coins: (prev.coins || 0) + 50,
+          lastRewardClaim: new Date(),
+          totalRewardsClaimed: (prev.totalRewardsClaimed || 0) + 1
+        }));
+      }
+    } catch (error) {
+      console.error('Error claiming reward:', error);
+      Alert.alert('Error', 'Failed to claim reward. Please try again.');
+    } finally {
+      setClaimingReward(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -293,14 +371,21 @@ export default function ProfileScreen() {
               <RewardDot day="23 Sep" state="future" />
             </View>
 
-            <TouchableOpacity activeOpacity={0.9} style={styles.claimWrapper}>
+            <TouchableOpacity 
+              activeOpacity={0.9} 
+              style={[styles.claimWrapper, !canClaimToday && styles.claimWrapperDisabled]}
+              onPress={handleClaimReward}
+              disabled={!canClaimToday || claimingReward}
+            >
               <LinearGradient
-                colors={[C.brand, "rgba(191,46,240,0.2)"]}
+                colors={canClaimToday ? [C.brand, "rgba(191,46,240,0.2)"] : ["#444", "#333"]}
                 start={{ x: 0.1, y: 0 }}
                 end={{ x: 0.9, y: 1 }}
                 style={styles.claimBtn}
               >
-                <Text style={styles.claimText}>Claim Reward</Text>
+                <Text style={styles.claimText}>
+                  {claimingReward ? 'Claiming...' : canClaimToday ? 'Claim Reward' : 'Claimed Today'}
+                </Text>
               </LinearGradient>
             </TouchableOpacity>
           </View>
@@ -458,6 +543,9 @@ const styles = StyleSheet.create({
     borderColor: C.brand,
     borderRadius: 12,
     overflow: "hidden",
+  },
+  claimWrapperDisabled: {
+    opacity: 0.5,
   },
   claimBtn: { paddingVertical: 12, alignItems: "center" },
   claimText: { color: "#fff", fontWeight: "800" },

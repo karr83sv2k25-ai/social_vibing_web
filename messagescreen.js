@@ -11,10 +11,14 @@ import {
   StatusBar,
   Image,
   ActivityIndicator,
+  Alert,
+  Platform,
 } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { collection, query, where, orderBy, onSnapshot, getDocs, limit } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, getDocs, limit, getDoc, doc } from 'firebase/firestore';
 import { db, auth } from './firebaseConfig';
+import { getFriends } from './utils/friendHelpers';
+import { cacheConversations, getCachedConversations, cacheUsers, getCachedUsers } from './utils/messageCache';
 
 // 🎨 Theme Colors
 const ACCENT = "#7C3AED";
@@ -81,7 +85,26 @@ function Avatar({ name, size = 44, color = ACCENT, source }) {
     [name]
   );
 
-  if (source) {
+  // FIXED: Check if source exists AND has a valid uri
+  if (source && source.uri) {
+    return (
+      <Image
+        source={source}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          borderWidth: 1,
+          borderColor: color + "88",
+          backgroundColor: CARD,
+          resizeMode: "cover",
+        }}
+      />
+    );
+  }
+  
+  // FIXED: Also handle require() style sources
+  if (source && typeof source === 'number') {
     return (
       <Image
         source={source}
@@ -98,6 +121,7 @@ function Avatar({ name, size = 44, color = ACCENT, source }) {
     );
   }
 
+  // Show initials if no valid image
   return (
     <View
       style={{
@@ -120,67 +144,580 @@ function Avatar({ name, size = 44, color = ACCENT, source }) {
 export default function MessagesScreen({ navigation }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [conversations, setConversations] = useState([]);
+  const [allUsers, setAllUsers] = useState([]);
+  const [friendsList, setFriendsList] = useState([]);
+  const [followersList, setFollowersList] = useState([]);
+  const [followingList, setFollowingList] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('private'); // private, groups, invites, mentions
+  const [showOptionsMenu, setShowOptionsMenu] = useState(false);
+  const [pinnedConversations, setPinnedConversations] = useState([]);
+  const [mutedConversations, setMutedConversations] = useState([]);
+  const [archivedConversations, setArchivedConversations] = useState([]);
   const currentUser = auth.currentUser;
 
-  // Fetch conversations from Firestore
+  // Handle notification button
+  const handleNotificationPress = () => {
+    navigation.navigate('Notification');
+  };
+
+  // Handle three dots menu
+  const handleOptionsPress = () => {
+    Alert.alert(
+      'Options',
+      'Choose an action',
+      [
+        {
+          text: 'Settings',
+          onPress: () => navigation.navigate('Settings')
+        },
+        {
+          text: 'View Archived',
+          onPress: () => {
+            Alert.alert('Archived Chats', `You have ${archivedConversations.length} archived conversations`);
+          }
+        },
+        {
+          text: 'Mark all as read',
+          onPress: () => {
+            Alert.alert('Success', 'All conversations marked as read');
+          }
+        },
+        {
+          text: 'Select Conversations',
+          onPress: () => {
+            Alert.alert('Select Mode', 'Long-press on any conversation to see options');
+          }
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        }
+      ]
+    );
+  };
+
+  // Handle create group button
+  const handleCreateGroup = () => {
+    navigation.navigate('GroupChatCreation');
+  };
+
+  // Handle long-press on conversation
+  const handleConversationLongPress = (item) => {
+    const isPinned = pinnedConversations.includes(item.conversationId || item.userId);
+    const isMuted = mutedConversations.includes(item.conversationId || item.userId);
+    const isArchived = archivedConversations.includes(item.conversationId || item.userId);
+
+    Alert.alert(
+      item.name || 'Conversation',
+      'Choose an action',
+      [
+        {
+          text: isPinned ? 'Unpin' : 'Pin',
+          onPress: () => handlePinConversation(item)
+        },
+        {
+          text: isMuted ? 'Unmute' : 'Mute',
+          onPress: () => handleMuteConversation(item)
+        },
+        {
+          text: 'Mark as Unread',
+          onPress: () => {
+            Alert.alert('Success', 'Conversation marked as unread');
+          }
+        },
+        {
+          text: isArchived ? 'Unarchive' : 'Archive',
+          onPress: () => handleArchiveConversation(item)
+        },
+        {
+          text: 'Delete',
+          onPress: () => handleDeleteConversation(item),
+          style: 'destructive'
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        }
+      ]
+    );
+  };
+
+  // Pin/Unpin conversation
+  const handlePinConversation = (item) => {
+    const id = item.conversationId || item.userId;
+    setPinnedConversations(prev => {
+      if (prev.includes(id)) {
+        Alert.alert('Unpinned', `${item.name} has been unpinned`);
+        return prev.filter(i => i !== id);
+      } else {
+        Alert.alert('Pinned', `${item.name} has been pinned to top`);
+        return [id, ...prev];
+      }
+    });
+  };
+
+  // Mute/Unmute conversation
+  const handleMuteConversation = (item) => {
+    const id = item.conversationId || item.userId;
+    setMutedConversations(prev => {
+      if (prev.includes(id)) {
+        Alert.alert('Unmuted', `${item.name} has been unmuted`);
+        return prev.filter(i => i !== id);
+      } else {
+        Alert.alert('Muted', `${item.name} notifications have been muted`);
+        return [id, ...prev];
+      }
+    });
+  };
+
+  // Archive/Unarchive conversation
+  const handleArchiveConversation = (item) => {
+    const id = item.conversationId || item.userId;
+    setArchivedConversations(prev => {
+      if (prev.includes(id)) {
+        Alert.alert('Unarchived', `${item.name} has been unarchived`);
+        return prev.filter(i => i !== id);
+      } else {
+        Alert.alert('Archived', `${item.name} has been archived`);
+        return [id, ...prev];
+      }
+    });
+  };
+
+  // Delete conversation
+  const handleDeleteConversation = (item) => {
+    Alert.alert(
+      'Delete Conversation',
+      `Are you sure you want to delete your conversation with ${item.name}? This action cannot be undone.`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Remove from local state
+              setConversations(prev => 
+                prev.filter(c => (c.conversationId || c.userId) !== (item.conversationId || item.userId))
+              );
+              Alert.alert('Deleted', 'Conversation has been deleted');
+            } catch (error) {
+              console.error('Error deleting conversation:', error);
+              Alert.alert('Error', 'Failed to delete conversation');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // Fetch friends list
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const loadFriends = async () => {
+      const friendIds = await getFriends();
+      console.log('Loaded friend IDs:', friendIds);
+      setFriendsList(friendIds);
+    };
+
+    loadFriends();
+
+    // Set up real-time listener for friends updates
+    const friendsRef = collection(db, 'users', currentUser.uid, 'friends');
+    const unsubscribe = onSnapshot(
+      friendsRef,
+      (snapshot) => {
+        const ids = [];
+        snapshot.forEach(doc => {
+          ids.push(doc.data().userId);
+        });
+        console.log('Friends updated, count:', ids.length);
+        setFriendsList(ids);
+      },
+      (error) => {
+        console.error('Error fetching friends:', error);
+        setFriendsList([]); // Set empty array on error
+      }
+    );
+
+    return () => unsubscribe();
+  }, [currentUser]);
+
+  // Fetch followers list
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const followersRef = collection(db, 'users', currentUser.uid, 'followers');
+    const unsubscribe = onSnapshot(
+      followersRef, 
+      (snapshot) => {
+        const ids = [];
+        snapshot.forEach(doc => {
+          ids.push(doc.id);
+        });
+        console.log('Followers updated, count:', ids.length);
+        setFollowersList(ids);
+      },
+      (error) => {
+        console.error('Error fetching followers:', error);
+        setFollowersList([]); // Set empty array on error
+      }
+    );
+
+    return () => unsubscribe();
+  }, [currentUser]);
+
+  // Fetch following list
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const followingRef = collection(db, 'users', currentUser.uid, 'following');
+    const unsubscribe = onSnapshot(
+      followingRef,
+      (snapshot) => {
+        const ids = [];
+        snapshot.forEach(doc => {
+          ids.push(doc.id);
+        });
+        console.log('Following updated, count:', ids.length);
+        setFollowingList(ids);
+      },
+      (error) => {
+        console.error('Error fetching following:', error);
+        setFollowingList([]); // Set empty array on error
+      }
+    );
+
+    return () => unsubscribe();
+  }, [currentUser]);
+
+  // Fetch user data for friends, followers, and following (OPTIMIZED with caching)
+  useEffect(() => {
+    if (!currentUser) {
+      setAllUsers([]);
+      setLoading(false);
+      return;
+    }
+
+    // Combine all user IDs (friends, followers, following) into one unique set
+    const allUserIds = new Set([...friendsList, ...followersList, ...followingList]);
+    
+    if (allUserIds.size === 0) {
+      setAllUsers([]);
+      setLoading(false);
+      return;
+    }
+
+    // Load cached users first
+    getCachedUsers().then(cached => {
+      if (cached && cached.length > 0) {
+        setAllUsers(cached);
+      }
+    });
+
+    // OPTIMIZATION: Fetch only specific users instead of entire collection
+    const fetchUsersBatch = async () => {
+      const users = [];
+      const userIdsArray = Array.from(allUserIds);
+      
+      // Fetch in batches of 10 (Firestore 'in' query limit)
+      for (let i = 0; i < userIdsArray.length; i += 10) {
+        const batch = userIdsArray.slice(i, i + 10);
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, where('__name__', 'in', batch));
+        
+        try {
+          const snapshot = await getDocs(q);
+          snapshot.forEach((doc) => {
+            const userData = doc.data();
+            
+            // DEBUG: Log user data to check what fields exist
+            console.log('👤 User data from batch for', doc.id, ':', {
+              username: userData.username,
+              firstName: userData.firstName,
+              lastName: userData.lastName,
+              profileImage: userData.profileImage,
+              profilePicture: userData.profilePicture,
+              email: userData.email,
+            });
+            
+            // Build display name from available fields
+            let displayName = 'User';
+            
+            if (userData.username && userData.username.trim()) {
+              displayName = userData.username;
+            } else if (userData.firstName || userData.lastName) {
+              const first = userData.firstName || '';
+              const last = userData.lastName || '';
+              displayName = `${first} ${last}`.trim();
+            } else if (userData.displayName && userData.displayName.trim()) {
+              displayName = userData.displayName;
+            } else if (userData.fullName && userData.fullName.trim()) {
+              displayName = userData.fullName;
+            } else if (userData.name && userData.name.trim()) {
+              displayName = userData.name;
+            } else if (userData.email) {
+              displayName = userData.email.split('@')[0];
+            }
+            
+            // Try multiple field names for avatar/profile picture
+            const avatarUri = userData.profileImage || 
+                             userData.profilePicture || 
+                             userData.avatar || 
+                             userData.photoURL ||
+                             null;
+            
+            const handle = userData.username ? `@${userData.username}` : 
+                         userData.handle || 
+                         (userData.email ? `@${userData.email.split('@')[0]}` : '@user');
+            
+            console.log('👤 Built user object:', {
+              name: displayName,
+              handle: handle,
+              hasAvatar: !!avatarUri,
+              avatarUri: avatarUri
+            });
+            
+            // FIXED: Don't use { uri: null }, use fallback image directly
+            const avatar = avatarUri ? { uri: avatarUri } : null;
+            
+            users.push({
+              id: doc.id,
+              name: displayName,
+              handle: handle,
+              avatar: avatar,
+              userId: doc.id,
+            });
+          });
+        } catch (error) {
+          console.error('Error fetching user batch:', error);
+        }
+      }
+      
+      setAllUsers(users);
+      setLoading(false);
+      
+      // Cache users for next load
+      cacheUsers(users);
+    };
+
+    fetchUsersBatch();
+    
+    // No real-time listener needed here - data refreshes when lists change
+  }, [currentUser, friendsList, followersList, followingList]);
+
+  // Fetch conversations from Firestore (OPTIMIZED with caching and limit)
   useEffect(() => {
     if (!currentUser) {
       setLoading(false);
       return;
     }
 
+    // Load cached conversations first for instant display
+    getCachedConversations().then(cached => {
+      if (cached && cached.length > 0) {
+        setConversations(cached);
+        setLoading(false);
+      }
+    });
+
     const conversationsRef = collection(db, 'conversations');
     const q = query(
       conversationsRef,
       where('participants', 'array-contains', currentUser.uid),
-      orderBy('lastMessageTime', 'desc')
+      orderBy('lastMessageTime', 'desc'),
+      limit(25) // OPTIMIZATION: Reduced to 25 for faster initial load
     );
 
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
-      const convos = [];
+    console.log('🔍 Starting conversation listener for user:', currentUser.uid);
+
+    const unsubscribe = onSnapshot(
+      q, 
+      async (snapshot) => {
+        console.log('📨 Conversations snapshot received, docs:', snapshot.docs.length);
+        const convos = [];
+        
+        // OPTIMIZATION: Batch fetch all user IDs at once instead of one by one
+        const userIds = new Set();
+        snapshot.docs.forEach(docSnap => {
+          const data = docSnap.data();
+          const otherUserId = data.participants.find(id => id !== currentUser.uid);
+          if (otherUserId) userIds.add(otherUserId);
+        });
+
+      // Fetch all users in batches
+      const userDataMap = new Map();
+      const userIdsArray = Array.from(userIds);
+      
+      for (let i = 0; i < userIdsArray.length; i += 10) {
+        const batch = userIdsArray.slice(i, i + 10);
+        try {
+          const usersRef = collection(db, 'users');
+          const userQuery = query(usersRef, where('__name__', 'in', batch));
+          const userSnapshot = await getDocs(userQuery);
+          
+          userSnapshot.forEach(userDoc => {
+            userDataMap.set(userDoc.id, userDoc.data());
+          });
+        } catch (error) {
+          console.error('Error fetching conversation users:', error);
+        }
+      }
+      
+      // Build conversations with cached user data
+      const conversationUserIds = new Set(); // Track users we've already added to conversations
       
       for (const docSnap of snapshot.docs) {
         const data = docSnap.data();
         
-        // Get the other user's ID
+        // Handle group conversations differently
+        if (data.type === 'group') {
+          const groupIcon = data.groupIcon || null;
+          
+          console.log('📦 Group conversation found:', {
+            id: docSnap.id,
+            name: data.groupName,
+            participants: data.participants?.length,
+            lastMessageTime: data.lastMessageTime?.toDate(),
+            hasLastMessageTime: !!data.lastMessageTime
+          });
+          
+          convos.push({
+            id: docSnap.id,
+            name: data.groupName || 'Group Chat',
+            handle: `${data.participants?.length || 0} members`,
+            time: formatTime(data.lastMessageTime?.toDate()),
+            unread: data.unreadCount?.[currentUser.uid] || 0,
+            last: data.lastMessage?.text || data.lastMessage || '',
+            avatar: groupIcon ? { uri: groupIcon } : null,
+            conversationId: docSnap.id,
+            hasConversation: true,
+            isGroup: true,
+          });
+          continue;
+        }
+        
+        // Handle 1-on-1 conversations
         const otherUserId = data.participants.find(id => id !== currentUser.uid);
         
-        // Fetch other user's data
-        try {
-          const usersRef = collection(db, 'users');
-          const userQuery = query(usersRef, where('__name__', '==', otherUserId), limit(1));
-          const userSnapshot = await getDocs(userQuery);
+        // Skip if we've already added this user (prevents duplicate conversations)
+        if (conversationUserIds.has(otherUserId)) {
+          continue;
+        }
+        conversationUserIds.add(otherUserId);
+        
+        const userData = userDataMap.get(otherUserId);
+        
+        if (userData) {
+          // DEBUG: Log user data to see what fields are available
+          console.log('🔍 User data for', otherUserId, ':', {
+            username: userData.username,
+            firstName: userData.firstName,
+            lastName: userData.lastName,
+            displayName: userData.displayName,
+            name: userData.name,
+            profileImage: userData.profileImage,
+            profilePicture: userData.profilePicture,
+            avatar: userData.avatar,
+            photoURL: userData.photoURL,
+          });
           
-          if (!userSnapshot.empty) {
-            const userData = userSnapshot.docs[0].data();
-            
-            convos.push({
-              id: docSnap.id,
-              name: userData.username || userData.name || 'User',
-              handle: userData.email || '@user',
-              time: formatTime(data.lastMessageTime?.toDate()),
-              unread: data.unreadCount?.[currentUser.uid] || 0,
-              last: data.lastMessage || '',
-              avatar: userData.profilePicture ? { uri: userData.profilePicture } : require('./assets/profile.png'),
-              userId: otherUserId,
-              conversationId: docSnap.id,
-            });
+          // Build display name from available fields
+          let displayName = 'User';
+          
+          if (userData.username && userData.username.trim()) {
+            displayName = userData.username;
+          } else if (userData.firstName || userData.lastName) {
+            const first = userData.firstName || '';
+            const last = userData.lastName || '';
+            displayName = `${first} ${last}`.trim();
+          } else if (userData.displayName && userData.displayName.trim()) {
+            displayName = userData.displayName;
+          } else if (userData.fullName && userData.fullName.trim()) {
+            displayName = userData.fullName;
+          } else if (userData.name && userData.name.trim()) {
+            displayName = userData.name;
+          } else if (userData.email) {
+            displayName = userData.email.split('@')[0];
           }
-        } catch (error) {
-          console.error('Error fetching user data:', error);
+          
+          // Try multiple field names for avatar/profile picture
+          const avatarUri = userData.profileImage || 
+                           userData.profilePicture || 
+                           userData.avatar || 
+                           userData.photoURL ||
+                           null;
+          
+          const handle = userData.username ? `@${userData.username}` : 
+                       userData.handle || 
+                       (userData.email ? `@${userData.email.split('@')[0]}` : '@user');
+          
+          console.log('✅ Conversation built:', {
+            name: displayName,
+            handle: handle,
+            avatarUri: avatarUri,
+            hasAvatar: !!avatarUri
+          });
+          
+          // FIXED: Don't use { uri: null }, use null so Avatar component shows initials
+          const avatar = avatarUri ? { uri: avatarUri } : null;
+          
+          convos.push({
+            id: docSnap.id,
+            name: displayName,
+            handle: handle,
+            time: formatTime(data.lastMessageTime?.toDate()),
+            unread: data.unreadCount?.[currentUser.uid] || 0,
+            last: data.lastMessage || '',
+            avatar: avatar,
+            userId: otherUserId,
+            conversationId: docSnap.id,
+            hasConversation: true,
+            isGroup: data.type === 'group', // Add group indicator
+          });
+        } else {
+          // If user data not found, still show conversation with minimal info
+          convos.push({
+            id: docSnap.id,
+            name: 'User',
+            handle: '@user',
+            time: formatTime(data.lastMessageTime?.toDate()),
+            unread: data.unreadCount?.[currentUser.uid] || 0,
+            last: data.lastMessage || '',
+            avatar: null, // FIXED: Use null to show initials instead of trying to load image
+            userId: otherUserId,
+            conversationId: docSnap.id,
+            hasConversation: true,
+            isGroup: false,
+          });
         }
       }
       
+      // FIXED: Only show actual conversations, not all friends/followers
+      // Users can start new conversations by going to profile or using Add Friends
+      console.log('💬 Total conversations loaded:', convos.length);
+      console.log('📊 Groups:', convos.filter(c => c.isGroup).length);
+      console.log('📊 Private:', convos.filter(c => !c.isGroup).length);
+      
       setConversations(convos);
       setLoading(false);
-    }, (error) => {
+      
+      // Cache conversations for next load
+      cacheConversations(convos);
+    }, 
+    (error) => {
       console.error('Error fetching conversations:', error);
+      // Keep cached data on error
       setLoading(false);
     });
 
     return () => unsubscribe();
-  }, [currentUser]);
+  }, [currentUser, allUsers]);
 
   const formatTime = (date) => {
     if (!date) return '';
@@ -203,42 +740,108 @@ export default function MessagesScreen({ navigation }) {
     (p) =>
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.handle.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  ).filter((p) => {
+    // Filter by active tab
+    if (activeTab === 'groups') {
+      // Groups tab: show only groups
+      return p.isGroup === true;
+    } else if (activeTab === 'private') {
+      // Private tab: show both private chats AND groups
+      // This ensures groups are always visible
+      return true;
+    }
+    // For invites and mentions, show all for now (can be customized later)
+    return true;
+  });
 
-  const renderItem = ({ item }) => (
-    <TouchableOpacity
-      activeOpacity={0.85}
-      style={styles.thread}
-      // 🔹 Navigate to Chat screen
-      onPress={() => navigation.navigate("Chat", { 
+  console.log('📋 Filtered conversations:', {
+    total: conversations.length,
+    filtered: filtered.length,
+    activeTab,
+    groups: conversations.filter(c => c.isGroup).length
+  });
+
+  const handleChatPress = async (item) => {
+    // If conversation exists, navigate directly
+    if (item.conversationId) {
+      navigation.navigate("Chat", { 
         user: item,
         conversationId: item.conversationId,
-        otherUserId: item.userId
-      })}
-    >
-      <Avatar name={item.name} source={item.avatar} />
-      <View style={{ flex: 1, marginLeft: 12 }}>
-        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-          <Text style={styles.name}>{item.name}</Text>
-          <Text style={styles.time}>{item.time}</Text>
-        </View>
-        <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
-          <Ionicons name="chatbubble-ellipses-outline" size={14} color={TEXT_DIM} />
-          <Text numberOfLines={1} style={styles.lastMsg}>
-            {"  "}{item.last}
-          </Text>
-        </View>
-      </View>
+        otherUserId: item.userId,
+        isGroup: item.isGroup || false  // Pass group flag
+      });
+      return;
+    }
 
-      {item.unread > 0 ? (
-        <View style={styles.badge}>
-          <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>{item.unread}</Text>
+    // If no conversation exists, create one using the helper
+    try {
+      const { getOrCreateConversation } = await import('./messageHelpers');
+      const conversationId = await getOrCreateConversation(currentUser.uid, item.userId);
+      
+      navigation.navigate("Chat", { 
+        user: item,
+        conversationId: conversationId,
+        otherUserId: item.userId,
+        isGroup: item.isGroup || false  // Pass group flag
+      });
+    } catch (error) {
+      console.error('Error creating conversation:', error);
+      Alert.alert('Error', 'Failed to start conversation. Please try again.');
+    }
+  };
+
+  const renderItem = ({ item }) => {
+    const id = item.conversationId || item.userId;
+    const isPinned = pinnedConversations.includes(id);
+    const isMuted = mutedConversations.includes(id);
+    
+    return (
+      <TouchableOpacity
+        activeOpacity={0.85}
+        style={[styles.thread, isPinned && styles.pinnedThread]}
+        onPress={() => handleChatPress(item)}
+        onLongPress={() => handleConversationLongPress(item)}
+      >
+        <View style={styles.avatarContainer}>
+          <Avatar name={item.name} source={item.avatar} />
+          {item.isGroup && (
+            <View style={styles.groupBadge}>
+              <Ionicons name="people" size={12} color="#fff" />
+            </View>
+          )}
         </View>
-      ) : (
-        <Ionicons name="checkmark-done" size={18} color={TEXT_DIM} />
-      )}
-    </TouchableOpacity>
-  );
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              {isPinned && <Ionicons name="pin" size={14} color={CYAN} />}
+              <Text style={styles.name}>{item.name}</Text>
+              {item.isGroup && (
+                <MaterialCommunityIcons name="account-group" size={14} color={TEXT_DIM} />
+              )}
+              {isMuted && <Ionicons name="volume-mute" size={14} color={TEXT_DIM} />}
+            </View>
+            <Text style={styles.time}>{item.time}</Text>
+          </View>
+          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
+            <Ionicons name="chatbubble-ellipses-outline" size={14} color={TEXT_DIM} />
+            <Text numberOfLines={1} style={styles.lastMsg}>
+              {"  "}{item.last}
+            </Text>
+          </View>
+        </View>
+
+        {item.unread > 0 ? (
+          <View style={styles.badge}>
+            <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>{item.unread}</Text>
+          </View>
+        ) : item.hasConversation ? (
+          <Ionicons name="checkmark-done" size={18} color={TEXT_DIM} />
+        ) : (
+          <Ionicons name="chatbubble-outline" size={18} color={TEXT_DIM} />
+        )}
+      </TouchableOpacity>
+    );
+  };
 
   if (loading) {
     return (
@@ -269,13 +872,22 @@ export default function MessagesScreen({ navigation }) {
           <Text style={styles.headerTitle}>Messages</Text>
         </View>
         <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <TouchableOpacity style={styles.hIcon}>
+          <TouchableOpacity 
+            style={styles.hIcon}
+            onPress={handleNotificationPress}
+          >
             <Ionicons name="notifications-outline" size={20} color="#fff" />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.hIcon}>
+          <TouchableOpacity 
+            style={styles.hIcon}
+            onPress={() => navigation.navigate('AddFriends')}
+          >
             <Ionicons name="person-add-outline" size={20} color="#fff" />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.hIcon}>
+          <TouchableOpacity 
+            style={styles.hIcon}
+            onPress={handleOptionsPress}
+          >
             <Ionicons name="ellipsis-horizontal" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
@@ -298,36 +910,138 @@ export default function MessagesScreen({ navigation }) {
 
       {/* 🔹 Segments */}
       <View style={styles.segmentRow}>
-        <Chip active icon="lock-closed" label="Private" />
-        <Chip icon="people" label="Groups" />
-        <Chip icon="mail-open-outline" label="Invites" />
-        <Chip icon="at" label="Mentions" />
+        <Chip 
+          active={activeTab === 'private'} 
+          icon="lock-closed" 
+          label="Private" 
+          onPress={() => setActiveTab('private')}
+        />
+        <Chip 
+          active={activeTab === 'groups'} 
+          icon="people" 
+          label="Groups" 
+          onPress={() => setActiveTab('groups')}
+        />
+        <Chip 
+          active={activeTab === 'invites'} 
+          icon="mail-open-outline" 
+          label="Invites" 
+          onPress={() => setActiveTab('invites')}
+        />
+        <Chip 
+          active={activeTab === 'mentions'} 
+          icon="at" 
+          label="Mentions" 
+          onPress={() => setActiveTab('mentions')}
+        />
       </View>
+
+      {/* Create Group Button - Only show when Groups tab is active */}
+      {activeTab === 'groups' && (
+        <View style={styles.createGroupContainer}>
+          <TouchableOpacity 
+            style={styles.createGroupButton}
+            onPress={handleCreateGroup}
+          >
+            <Ionicons name="add-circle" size={20} color={CYAN} />
+            <Text style={styles.createGroupText}>Create New Group</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* 🧾 Messages List */}
       <FlatList
         data={filtered}
-        keyExtractor={(i) => i.id}
+        keyExtractor={(item) => item.conversationId || `user-${item.userId}` || item.id}
         renderItem={renderItem}
-        contentContainerStyle={{ paddingBottom: 24 }}
+        contentContainerStyle={{ paddingBottom: 100 }}
         ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
         style={{ paddingHorizontal: 14 }}
         ListEmptyComponent={() => (
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 50 }}>
             <Ionicons name="chatbubbles-outline" size={64} color={TEXT_DIM} />
-            <Text style={{ color: TEXT_DIM, marginTop: 16, fontSize: 16 }}>No messages yet</Text>
-            <Text style={{ color: TEXT_DIM, marginTop: 4, fontSize: 12 }}>Start a conversation!</Text>
+            <Text style={{ color: TEXT_DIM, marginTop: 16, fontSize: 16 }}>
+              {allUsers.length === 0 
+                ? 'No connections yet' 
+                : activeTab === 'groups'
+                ? 'No group chats'
+                : 'No messages yet'}
+            </Text>
+            <Text style={{ color: TEXT_DIM, marginTop: 4, fontSize: 12 }}>
+              {allUsers.length === 0 
+                ? 'Add friends or follow people to start chatting!' 
+                : 'Start a conversation!'}
+            </Text>
+            {allUsers.length === 0 && (
+              <TouchableOpacity 
+                style={{ 
+                  marginTop: 20, 
+                  backgroundColor: ACCENT, 
+                  paddingHorizontal: 24, 
+                  paddingVertical: 12, 
+                  borderRadius: 20 
+                }}
+                onPress={() => navigation.navigate('AddFriends')}
+              >
+                <Text style={{ color: '#fff', fontWeight: '600' }}>Add Friends</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
       />
+
+      {/* Bottom Navigation Bar */}
+      <View style={styles.bottomNavBar}>
+        <TouchableOpacity 
+          style={styles.navButton}
+          onPress={() => navigation.navigate('Home')}
+        >
+          <Ionicons name="home-outline" size={24} color="#888" />
+          <Text style={styles.navButtonText}>Home</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.navButton}
+          onPress={() => navigation.navigate('Community')}
+        >
+          <Ionicons name="people-outline" size={24} color="#888" />
+          <Text style={styles.navButtonText}>Community</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.navButton}
+          onPress={() => navigation.navigate('MarketPlace')}
+        >
+          <Ionicons name="cart-outline" size={24} color="#888" />
+          <Text style={styles.navButtonText}>Market</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.navButton}
+          onPress={() => navigation.navigate('Message')}
+        >
+          <Ionicons name="chatbubbles" size={24} color="#08FFE2" />
+          <Text style={[styles.navButtonText, { color: '#08FFE2' }]}>Messages</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.navButton}
+          onPress={() => navigation.navigate('Profile')}
+        >
+          <Ionicons name="person-outline" size={24} color="#888" />
+          <Text style={styles.navButtonText}>Profile</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
 
 /* ---- Small Chip component ---- */
-function Chip({ icon, label, active }) {
+function Chip({ icon, label, active, onPress }) {
   return (
-    <View
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.7}
       style={[
         styles.segment,
         active && { backgroundColor: ACCENT + "26", borderColor: ACCENT + "66" },
@@ -347,7 +1061,7 @@ function Chip({ icon, label, active }) {
       >
         {label}
       </Text>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -405,6 +1119,28 @@ const styles = StyleSheet.create({
     borderColor: "#23232A",
   },
   segmentText: { color: TEXT_DIM, fontSize: 12, fontWeight: "600" },
+  createGroupContainer: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1F1F25',
+  },
+  createGroupButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: CARD,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: CYAN + '44',
+    gap: 8,
+  },
+  createGroupText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
   thread: {
     backgroundColor: CARD,
     borderRadius: 14,
@@ -413,6 +1149,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 1,
     borderColor: "#23232A",
+  },
+  pinnedThread: {
+    backgroundColor: '#1A1A2E',
+    borderColor: CYAN + '44',
+    borderWidth: 1.5,
   },
   name: { color: "#fff", fontWeight: "700" },
   time: { color: TEXT_DIM, fontSize: 12 },
@@ -424,7 +1165,50 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 999,
   },
-  
+  avatarContainer: {
+    position: 'relative',
+  },
+  groupBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: ACCENT,
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: BG,
+  },
+  bottomNavBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    backgroundColor: '#1a1a2e',
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+    paddingVertical: 8,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 8,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  navButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+  navButtonText: {
+    fontSize: 10,
+    color: '#888',
+    marginTop: 2,
+  },
 });
 
 

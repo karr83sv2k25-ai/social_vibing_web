@@ -46,7 +46,7 @@ const { width } = Dimensions.get('window');
 export default function GroupAudioCallScreen() {
   const navigation = useNavigation();
   const route = useRoute();
-  const { communityId, roomId, groupTitle } = route.params || {};
+  const { communityId, callId, groupTitle } = route.params || {};
 
   const [currentUser, setCurrentUser] = useState(null);
   const [participants, setParticipants] = useState([]);
@@ -85,8 +85,12 @@ export default function GroupAudioCallScreen() {
               userData.name ||
               userData.fullName ||
               userData.username ||
+              userData.firstName ||
               auth.currentUser.displayName ||
+              auth.currentUser.email?.split('@')[0] ||
               'User';
+
+            console.log('[GroupCall] User loaded:', { id: userId, name: userName });
 
             setCurrentUser({
               id: userId,
@@ -94,15 +98,22 @@ export default function GroupAudioCallScreen() {
               profileImage: userData.profileImage || userData.avatar || null,
             });
           } else {
+            console.log('[GroupCall] User document not found, using auth data');
+            const fallbackName = auth.currentUser.displayName || auth.currentUser.email?.split('@')[0] || 'User';
             setCurrentUser({
               id: userId,
-              name: auth.currentUser.displayName || 'User',
+              name: fallbackName,
               profileImage: null,
             });
           }
+        } else {
+          console.log('[GroupCall] No authenticated user');
+          Alert.alert('Error', 'You must be logged in to join a call');
+          navigation.goBack();
         }
       } catch (e) {
         console.log('[Agora] Error fetching user:', e);
+        Alert.alert('Error', 'Failed to load user data: ' + e.message);
       }
     };
 
@@ -111,7 +122,7 @@ export default function GroupAudioCallScreen() {
 
   // Initialize Agora and join channel
   useEffect(() => {
-    if (!currentUser?.id || !communityId || !roomId) return;
+    if (!currentUser?.id || !communityId || !callId) return;
 
     let engine = null;
 
@@ -195,6 +206,21 @@ export default function GroupAudioCallScreen() {
           },
           onError: (err, msg) => {
             console.log('[Agora] ❌ Error code:', err, 'Message:', msg);
+            
+            // Handle specific errors
+            if (err === 109) {
+              Alert.alert(
+                'Token Expired',
+                'The Agora token has expired. Options:\\n\\n1. Generate a new token from Agora Console\\n2. OR disable App Certificate in Agora Console\\n3. Set token to null in agoraConfig.js for testing',
+                [{ text: 'OK' }]
+              );
+            } else if (err === 110) {
+              Alert.alert(
+                'Connection Timeout',
+                'Failed to join the voice channel. Please check:\\n\\n1. Your internet connection\\n2. Agora App Certificate is DISABLED (for testing with null token)\\n3. Or generate a valid token if App Certificate is enabled',
+                [{ text: 'OK', onPress: () => navigation.goBack() }]
+              );
+            }
           },
           onWarning: (warn, msg) => {
             console.log('[Agora] ⚠️ Warning:', warn, msg);
@@ -207,8 +233,8 @@ export default function GroupAudioCallScreen() {
         // Enable audio volume indication
         await engine.enableAudioVolumeIndication(300, 3, false);
 
-        // Generate channel name and join
-        const channelName = generateChannelName(communityId, roomId);
+        // Generate channel name and join (use callId as channel)
+        const channelName = callId;
         console.log('[Agora] Joining channel:', channelName);
         console.log('[Agora] Token:', AGORA_CONFIG.token ? 'Present' : 'NULL');
         
@@ -230,34 +256,39 @@ export default function GroupAudioCallScreen() {
           let errorMsg = 'Failed to join channel';
           if (result === -102) {
             errorMsg = 'Invalid App ID. Please check:\n1. App ID is correct in agoraConfig.js\n2. Project is active in Agora Console\n3. Wait 2-3 minutes for new projects to activate';
+          } else if (result === -109 || result === 109) {
+            errorMsg = 'Token Error:\n1. Token expired - Generate new token\n2. OR disable App Certificate in Agora Console\n3. Set token to null in agoraConfig.js for testing';
+          } else if (result === -110 || result === 110) {
+            errorMsg = 'Connection Timeout:\n1. Check your internet connection\n2. Disable App Certificate in Agora Console (for null token)\n3. Or generate a valid token';
           }
           Alert.alert('Connection Error', errorMsg);
         }
 
-        // Add user to Firebase participants
-        // db is now imported globally
-        const roomRef = doc(db, 'audio_calls', communityId, 'rooms', roomId);
-        const roomSnap = await getDoc(roomRef);
-
-        if (roomSnap.exists()) {
-          const data = roomSnap.data();
-          const existingParticipants = data.participants || [];
-          const userExists = existingParticipants.some(p => p.userId === currentUser.id);
-
-          if (!userExists) {
-            await updateDoc(roomRef, {
-              participants: arrayUnion({
-                userId: currentUser.id,
-                userName: currentUser.name,
-                profileImage: currentUser.profileImage,
-                joinedAt: new Date().toISOString(),
-                isMuted: false,
-                isSpeaking: false,
-              }),
-              updatedAt: serverTimestamp(),
-            });
-          }
+        // Add user to call participants using call system
+        const { joinGroupCall } = require('./callHelpers');
+        
+        // Ensure we have valid user data
+        if (!currentUser.id || !currentUser.name) {
+          console.log('[Agora] Invalid user data:', currentUser);
+          Alert.alert(
+            'Error', 
+            'Unable to join voice room. User information is missing.\n\nPlease ensure your profile is set up correctly.',
+            [{ text: 'OK', onPress: () => navigation.goBack() }]
+          );
+          return;
         }
+        
+        console.log('[Agora] Joining with user:', { id: currentUser.id, name: currentUser.name });
+        
+        await joinGroupCall(
+          callId,
+          currentUser.id,
+          currentUser.name,
+          currentUser.profileImage || null
+        );
+        
+        console.log('[Agora] Successfully joined call');
+        setIsCallActive(true);
       } catch (error) {
         console.log('[Agora] ❌ Init error:', error);
         console.log('[Agora] Error details:', JSON.stringify(error, null, 2));
@@ -303,81 +334,127 @@ export default function GroupAudioCallScreen() {
             );
 
             if (updatedParticipants.length === 0) {
-              deleteDoc(roomRef);
+              // Only delete if user is the creator
+              if (data.createdBy === currentUser.id) {
+                deleteDoc(roomRef).catch(err => {
+                  console.log('[Agora] Error deleting room:', err.code);
+                });
+              } else {
+                // Just update to empty participants
+                updateDoc(roomRef, {
+                  participants: [],
+                  updatedAt: serverTimestamp(),
+                }).catch(err => {
+                  console.log('[Agora] Error updating room:', err.code);
+                });
+              }
             } else {
               updateDoc(roomRef, {
                 participants: updatedParticipants,
                 updatedAt: serverTimestamp(),
+              }).catch(err => {
+                console.log('[Agora] Error updating participants:', err.code);
               });
             }
           }
+        }).catch(err => {
+          console.log('[Agora] Error in cleanup:', err.code);
         });
       }
     };
-  }, [currentUser?.id, communityId, roomId]);
+  }, [currentUser?.id, communityId, callId]);
 
-  // Listen for participants updates
+  // Listen for participants updates from call system
   useEffect(() => {
-    if (!communityId || !roomId) return;
+    if (!callId) return;
 
-    // db is now imported globally
-    const roomRef = doc(db, 'audio_calls', communityId, 'rooms', roomId);
+    const callRef = doc(db, 'calls', callId);
 
-    const unsubscribe = onSnapshot(roomRef, (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        const participantsList = data.participants || [];
-        console.log('[Agora] Participants updated:', participantsList.length);
-        participantsList.forEach(p => {
-          console.log(`[Agora] Participant: ${p.userName}, Image: ${p.profileImage || 'none'}`);
-        });
-        setParticipants(participantsList);
-
-        // Initialize animations
-        (data.participants || []).forEach((p) => {
-          if (!pulseAnims[p.userId]) {
-            pulseAnims[p.userId] = new Animated.Value(1);
+    const unsubscribe = onSnapshot(
+      callRef,
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          const participantsList = data.participants || [];
+          
+          // If call ended or no participants left, exit
+          if (data.status === 'ended' || participantsList.length === 0) {
+            console.log('[Agora] Call ended');
+            Alert.alert('Call Ended', 'The call has been terminated', [
+              { text: 'OK', onPress: () => navigation.goBack() }
+            ]);
+            return;
           }
-        });
+          
+          console.log('[Agora] Participants updated:', participantsList.length);
+          participantsList.forEach(p => {
+            console.log(`[Agora] Participant: ${p.userName || 'Unknown'}, Image: ${p.profileImage || 'none'}`);
+          });
+          setParticipants(participantsList);
+
+          // Initialize animations
+          participantsList.forEach((p) => {
+            if (p.userId && !pulseAnims[p.userId]) {
+              pulseAnims[p.userId] = new Animated.Value(1);
+            }
+          });
+          
+          setIsCallActive(data.status === 'answered' || data.status === 'ringing');
+        } else {
+          // Call was deleted
+          console.log('[Agora] Call no longer exists');
+          Alert.alert('Call Ended', 'This call has been closed', [
+            { text: 'OK', onPress: () => navigation.goBack() }
+          ]);
+        }
+      },
+      (error) => {
+        console.log('[Agora] Error in call snapshot listener:', error.code);
       }
-    });
+    );
 
     return () => unsubscribe();
-  }, [communityId, roomId]);
+  }, [callId]);
 
   // Listen for chat messages
   useEffect(() => {
-    if (!communityId || !roomId) return;
+    if (!callId) return;
 
-    // db is now imported globally
-    const chatRef = collection(db, 'audio_calls', communityId, 'rooms', roomId, 'chat');
+    // Listen to chat messages in calls subcollection
+    const chatRef = collection(db, 'calls', callId, 'chat');
     const q = query(chatRef, orderBy('createdAt', 'asc'));
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const messages = snapshot.docs.map(docSnap => ({
-        id: docSnap.id,
-        ...docSnap.data()
-      }));
-      setChatMessages(messages);
-      
-      // Update unread count if chat is closed
-      if (!showChat && messages.length > 0) {
-        const lastMessage = messages[messages.length - 1];
-        if (lastMessage.senderId !== currentUser?.id) {
-          setUnreadCount(prev => prev + 1);
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const messages = snapshot.docs.map(docSnap => ({
+          id: docSnap.id,
+          ...docSnap.data()
+        }));
+        setChatMessages(messages);
+        
+        // Update unread count if chat is closed
+        if (!showChat && messages.length > 0) {
+          const lastMessage = messages[messages.length - 1];
+          if (lastMessage.senderId !== currentUser?.id) {
+            setUnreadCount(prev => prev + 1);
+          }
         }
+        
+        // Auto scroll to bottom
+        setTimeout(() => {
+          if (chatScrollRef.current && showChat) {
+            chatScrollRef.current.scrollToEnd({ animated: true });
+          }
+        }, 100);
+      },
+      (error) => {
+        console.log('[Agora] Error in chat snapshot listener:', error.code);
       }
-      
-      // Auto scroll to bottom
-      setTimeout(() => {
-        if (chatScrollRef.current && showChat) {
-          chatScrollRef.current.scrollToEnd({ animated: true });
-        }
-      }, 100);
-    });
+    );
 
     return () => unsubscribe();
-  }, [communityId, roomId, showChat, currentUser?.id]);
+  }, [callId, showChat, currentUser?.id]);
 
   // Reset unread count when chat opens
   useEffect(() => {
@@ -428,32 +505,35 @@ export default function GroupAudioCallScreen() {
   // End call
   const endCall = async () => {
     try {
-      // Check if user is the creator
-      const roomRef = doc(db, 'audio_calls', communityId, 'rooms', roomId);
-      const roomSnap = await getDoc(roomRef);
+      const { leaveGroupCall } = require('./callHelpers');
       
-      if (roomSnap.exists()) {
-        const data = roomSnap.data();
-        const isCreator = data.createdBy === currentUser?.id;
+      // Check if user is the creator
+      const callRef = doc(db, 'calls', callId);
+      const callSnap = await getDoc(callRef);
+      
+      if (callSnap.exists()) {
+        const data = callSnap.data();
+        const isCreator = data.callerId === currentUser?.id;
         
         if (isCreator) {
           // Creator leaving - offer to end session
           Alert.alert(
-            'End Voice Room?',
-            'You are the creator of this voice room. Do you want to end it for everyone?',
+            'End Voice Call?',
+            'You started this call. Do you want to end it for everyone?',
             [
               { text: 'Cancel', style: 'cancel' },
               {
                 text: 'Just Leave',
-                onPress: () => {
+                onPress: async () => {
                   if (agoraEngine) {
-                    agoraEngine.leaveChannel();
+                    await agoraEngine.leaveChannel();
                   }
+                  await leaveGroupCall(callId, currentUser.id);
                   navigation.goBack();
                 },
               },
               {
-                text: 'End Session',
+                text: 'End For All',
                 style: 'destructive',
                 onPress: () => {
                   endSession();
@@ -463,29 +543,30 @@ export default function GroupAudioCallScreen() {
           );
         } else {
           // Regular participant leaving
-          Alert.alert('End Call', 'Are you sure you want to leave the call?', [
+          Alert.alert('Leave Call', 'Are you sure you want to leave this call?', [
             { text: 'Cancel', style: 'cancel' },
             {
               text: 'Leave',
               style: 'destructive',
-              onPress: () => {
+              onPress: async () => {
                 if (agoraEngine) {
-                  agoraEngine.leaveChannel();
+                  await agoraEngine.leaveChannel();
                 }
+                await leaveGroupCall(callId, currentUser.id);
                 navigation.goBack();
               },
             },
           ]);
         }
       } else {
-        // Room doesn't exist, just leave
+        // Call doesn't exist, just leave
         if (agoraEngine) {
-          agoraEngine.leaveChannel();
+          await agoraEngine.leaveChannel();
         }
         navigation.goBack();
       }
     } catch (error) {
-      console.log('Error checking creator status:', error);
+      console.log('Error leaving call:', error);
       if (agoraEngine) {
         agoraEngine.leaveChannel();
       }
@@ -496,51 +577,30 @@ export default function GroupAudioCallScreen() {
   // End session (admin only)
   const endSession = () => {
     Alert.alert(
-      'End Voice Room',
-      'Are you sure you want to end this voice room for everyone? This action cannot be undone.',
+      'End Call For Everyone',
+      'Are you sure you want to end this call for all participants? This action cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'End Session',
+          text: 'End Call',
           style: 'destructive',
           onPress: async () => {
             try {
-              // db is now imported globally
-              const roomRef = doc(db, 'audio_calls', communityId, 'rooms', roomId);
+              const { endCall: endGroupCall } = require('./callHelpers');
               
-              // Find and update the chat message efficiently
-              const chatRef = collection(db, 'community_chats', communityId, 'messages');
-              const q = query(
-                chatRef,
-                where('type', '==', 'voiceChat'),
-                where('roomId', '==', roomId)
-              );
-              const messagesSnap = await getDocs(q);
+              // End the call for everyone
+              await endGroupCall(callId, callDuration);
               
-              // Update chat messages and delete room in parallel
-              const updatePromises = messagesSnap.docs.map(msgDoc =>
-                updateDoc(doc(db, 'community_chats', communityId, 'messages', msgDoc.id), {
-                  isActive: false,
-                  closedAt: serverTimestamp(),
-                  closedBy: currentUser.id,
-                })
-              );
-
-              // Wait for all operations to complete
-              await Promise.all([
-                ...updatePromises,
-                deleteDoc(roomRef)
-              ]);
-              
+              // Leave Agora channel
               if (agoraEngine) {
-                agoraEngine.leaveChannel();
+                await agoraEngine.leaveChannel();
               }
               
-              Alert.alert('Session Ended', 'The voice room has been closed for all participants.');
+              console.log('[Agora] Call ended by creator');
               navigation.goBack();
             } catch (error) {
-              console.error('Error ending session:', error);
-              Alert.alert('Error', 'Failed to end session. Please try again.');
+              console.log('[Agora] Error ending session:', error);
+              Alert.alert('Error', 'Failed to end the call. Please try again.');
             }
           },
         },
@@ -553,8 +613,8 @@ export default function GroupAudioCallScreen() {
     if (!chatInput.trim() || !currentUser) return;
 
     try {
-      // db is now imported globally
-      const chatRef = collection(db, 'audio_calls', communityId, 'rooms', roomId, 'chat');
+      // Store chat in calls subcollection
+      const chatRef = collection(db, 'calls', callId, 'chat');
       
       await addDoc(chatRef, {
         text: chatInput.trim(),
@@ -586,6 +646,10 @@ export default function GroupAudioCallScreen() {
     const isSpeaking = speakingUsers.includes(item.userId);
     const isCurrentUser = item.userId === currentUser?.id;
     const pulseAnim = pulseAnims[item.userId] || new Animated.Value(1);
+    
+    // Get display name with fallback
+    const displayName = isCurrentUser ? 'You' : (item.userName || 'User');
+    const avatarLetter = displayName.charAt(0).toUpperCase();
 
     return (
       <View style={styles.participantItem}>
@@ -600,13 +664,12 @@ export default function GroupAudioCallScreen() {
               source={{ uri: item.profileImage }}
               style={styles.avatar}
               resizeMode="cover"
-              onError={(e) => console.log('[Agora] Image load error:', item.userName, e.nativeEvent.error)}
-              onLoad={() => console.log('[Agora] Image loaded:', item.userName)}
+              onError={(e) => console.log('[Agora] Image load error:', displayName, e.nativeEvent.error)}
             />
           ) : (
             <View style={[styles.avatar, styles.avatarPlaceholder]}>
               <Text style={styles.avatarText}>
-                {item.userName?.charAt(0).toUpperCase() || 'U'}
+                {avatarLetter}
               </Text>
             </View>
           )}
@@ -618,7 +681,7 @@ export default function GroupAudioCallScreen() {
           )}
         </Animated.View>
         <Text style={styles.participantName} numberOfLines={1}>
-          {isCurrentUser ? 'You' : item.userName}
+          {displayName}
         </Text>
         {!item.isMuted && (
           <View style={styles.statusBadge}>
@@ -640,7 +703,7 @@ export default function GroupAudioCallScreen() {
           </TouchableOpacity>
           <View style={styles.participantCount}>
             <Text style={styles.participantCountText}>
-              {participants.length} of {participants.length}
+              {participants.length} {participants.length === 1 ? 'participant' : 'participants'}
             </Text>
           </View>
         </View>
@@ -689,7 +752,9 @@ export default function GroupAudioCallScreen() {
         {/* Participants */}
         <View style={styles.participantsContainer}>
           <FlatList
-            data={participants}
+            data={participants.filter((participant, index, self) => 
+              index === self.findIndex(p => p.userId === participant.userId)
+            )}
             renderItem={renderParticipant}
             keyExtractor={(item) => item.userId}
             numColumns={3}

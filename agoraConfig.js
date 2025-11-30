@@ -5,8 +5,8 @@ export const AGORA_CONFIG = {
   // App ID from Agora Console - Social_Vibing Project
   appId: '16276327f0ba4a6597c6ee64e4e61a32',
   
-  // Token for channel "agora"
-  token: '007eJxTYAjwSOC8vuL2KYnAO38vfDr4IIAzoVnsnQnD+pSXXw0f97MqMBiaGZmbGRuZpxkkJZokmplamiebpaaamaSapJoZJhobmdxWy2wIZGTYwPCIlZEBAkF8VobE9PyiRAYGALWxIGc',
+  // Token for channel "testing"
+  token: '007eJxTYBA/LlujJLQ49eF3+aia2XHFbUv94nfw3FKpvdcfEPHkY6cCg6GZkbmZsZF5mkFSokmimamlebJZaqqZSapJqplhorFRXrdmZkMgI8NOmzXMjAwQCOKzM5SkFpdk5qUzMAAAa2wf9g==',
   
   // Channel configuration
   channelProfile: 0, // 0 = Communication (for calls)
@@ -18,10 +18,10 @@ export const AGORA_CONFIG = {
 
 /**
  * Generate channel name from communityId and roomId
- * Using fixed channel name "agora" to match the token
+ * Using fixed channel name "testing" to match the token
  */
 export function generateChannelName(communityId, roomId) {
   // Fixed channel name for testing with token
-  return 'agora';
+  return 'testing';
 }
 

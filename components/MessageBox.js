@@ -21,10 +21,11 @@ import {
   StyleSheet,
   Animated,
   Platform,
+  Pressable,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
-export const MessageBox = ({
+export const MessageBox = React.forwardRef(({
   value,
   onChangeText,
   onSend,
@@ -32,6 +33,7 @@ export const MessageBox = ({
   onAttachPress,
   onVoiceRecordStart,
   onVoiceRecordEnd,
+  onFocus,
   placeholder = 'Message',
   isLoading = false,
   isOnline = true,
@@ -43,7 +45,7 @@ export const MessageBox = ({
   selectedColor,
   disabled = false,
   style,
-}) => {
+}, ref) => {
   const inputRef = useRef(null);
   const recordingScale = useRef(new Animated.Value(1)).current;
   const micPressTimer = useRef(null);
@@ -140,18 +142,6 @@ export const MessageBox = ({
         {/* Left Actions */}
         <View style={styles.leftActions}>
           <TouchableOpacity
-            onPress={onEmojiPress}
-            style={styles.actionButton}
-            disabled={disabled}
-          >
-            <MaterialCommunityIcons 
-              name="sticker-emoji" 
-              size={24} 
-              color={disabled ? '#444' : '#999'} 
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity
             onPress={onAttachPress}
             style={styles.actionButton}
             disabled={disabled}
@@ -164,25 +154,34 @@ export const MessageBox = ({
           </TouchableOpacity>
         </View>
 
-        {/* Input Field */}
-        <TextInput
-          ref={inputRef}
-          value={value}
-          onChangeText={onChangeText}
-          placeholder={placeholder}
-          placeholderTextColor="#666"
-          style={[
-            styles.input,
-            selectedColor && { color: selectedColor }
-          ]}
-          multiline
-          maxLength={maxLength}
-          textAlignVertical="center"
-          returnKeyType="send"
-          onSubmitEditing={handleSend}
-          blurOnSubmit={false}
-          editable={!disabled && !isRecording && isOnline && !isBlocked}
-        />
+        {/* Input Field - Wrap in Pressable to ensure emoji picker closes on tap */}
+        <Pressable 
+          style={{ flex: 1 }}
+          onPress={() => {
+            // This will trigger focus which calls onFocus
+            inputRef.current?.focus();
+          }}
+        >
+          <TextInput
+            ref={ref || inputRef}
+            value={value}
+            onChangeText={onChangeText}
+            onFocus={onFocus}
+            placeholder={placeholder}
+            placeholderTextColor="#666"
+            style={[
+              styles.input,
+              selectedColor && { color: selectedColor }
+            ]}
+            multiline
+            maxLength={maxLength}
+            textAlignVertical="center"
+            returnKeyType="send"
+            onSubmitEditing={handleSend}
+            blurOnSubmit={false}
+            editable={!disabled && !isRecording && isOnline && !isBlocked}
+          />
+        </Pressable>
 
         {/* Right Action (Send or Mic) */}
         {inputMode === 'send' ? (
@@ -225,10 +224,10 @@ export const MessageBox = ({
         <Text style={styles.charCount}>
           {value.length}/{maxLength}
         </Text>
-      )}
+      )})
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {

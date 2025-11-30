@@ -21,7 +21,8 @@ import {
   where, 
   getDocs, 
   getDoc,
-  
+  limit,
+  orderBy,
   onSnapshot,
   doc,
   setDoc,
@@ -419,9 +420,10 @@ export default function TopBar({ navigation }) {
       newUnsubscribers.push(userUnsub);
     }
 
-    // Communities listener - optimized with lazy image loading
+    // Communities listener - optimized with lazy image loading and limit
+    const communitiesQuery = query(collection(db, 'communities'), limit(20)); // OPTIMIZATION: Limit to 20 communities
     const communitiesUnsub = onSnapshot(
-      collection(db, 'communities'),
+      communitiesQuery,
       (snapshot) => {
         try {
           const possibleFields = ['profileImage', 'coverImage', 'backgroundImage', 'community_picture', 'imageUrl', 'banner', 'photo', 'picture'];
@@ -508,9 +510,14 @@ export default function TopBar({ navigation }) {
       newUnsubscribers.push(membershipUnsub);
     }
 
-    // Events listener - fetch only recent events for performance
-    const eventsUnsub = onSnapshot(
+    // Events listener - fetch only recent events for performance with query limit
+    const eventsQuery = query(
       collection(db, 'community_events'),
+      orderBy('date', 'desc'),
+      limit(20) // OPTIMIZATION: Limit to 20 most recent events
+    );
+    const eventsUnsub = onSnapshot(
+      eventsQuery,
       (snapshot) => {
         const now = new Date().toISOString();
         const events = snapshot.docs
@@ -519,8 +526,7 @@ export default function TopBar({ navigation }) {
             ...doc.data(),
             joined: false // Will be updated lazily if needed
           }))
-          .filter(event => !event.date || event.date >= now)
-          .slice(0, 20); // Limit to 20 events for performance
+          .filter(event => !event.date || event.date >= now);
 
         setCommunityEvents(events);
         // Cache events

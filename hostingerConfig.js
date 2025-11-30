@@ -4,6 +4,14 @@
  * Upload images, videos, and audio to your Hostinger server
  */
 
+// Optional import - gracefully handles when package is not available
+let ImageManipulator = null;
+try {
+  ImageManipulator = require('expo-image-manipulator');
+} catch (error) {
+  console.log('expo-image-manipulator not available, image compression disabled');
+}
+
 // ⚠️ IMPORTANT: Update these values with your actual Hostinger details
 export const hostingerConfig = {
   // Your domain where upload.php is hosted
@@ -19,6 +27,38 @@ export const hostingerConfig = {
   maxImageSize: 10 * 1024 * 1024, // 10MB
   maxVideoSize: 50 * 1024 * 1024, // 50MB
   maxAudioSize: 20 * 1024 * 1024, // 20MB
+  maxFileSize: 50 * 1024 * 1024, // 50MB for documents/files
+};
+
+/**
+ * Compress and resize image for faster upload
+ * @param {string} uri - Image URI
+ * @returns {Promise<string>} - Compressed image URI
+ */
+const compressImage = async (uri) => {
+  try {
+    // Check if ImageManipulator is available
+    if (!ImageManipulator || !ImageManipulator.manipulateAsync) {
+      console.log('ImageManipulator not available, using original image');
+      return uri;
+    }
+
+    // Resize to max 1920x1080 (maintains aspect ratio) and compress
+    const manipResult = await ImageManipulator.manipulateAsync(
+      uri,
+      [{ resize: { width: 1920 } }], // Resize width to max 1920px, height auto-scales
+      { 
+        compress: 0.6, // 60% quality - good balance between quality and size
+        format: ImageManipulator.SaveFormat?.JPEG || 'jpeg'
+      }
+    );
+
+    console.log('✅ Image compressed from', uri, 'to', manipResult.uri);
+    return manipResult.uri;
+  } catch (error) {
+    console.log('Image compression failed, using original:', error);
+    return uri; // Return original if compression fails
+  }
 };
 
 /**
@@ -29,16 +69,19 @@ export const hostingerConfig = {
  */
 export const uploadImageToHostinger = async (uri, folder = 'general') => {
   try {
+    // Compress image before upload for faster transmission
+    const compressedUri = await compressImage(uri);
+    
     // Create form data
     const formData = new FormData();
     
     // Extract filename from URI
-    const filename = uri.split('/').pop();
+    const filename = compressedUri.split('/').pop();
     const match = /\.(\w+)$/.exec(filename);
     const type = match ? `image/${match[1]}` : 'image/jpeg';
     
     formData.append('file', {
-      uri,
+      uri: compressedUri,
       type,
       name: filename || 'photo.jpg',
     });

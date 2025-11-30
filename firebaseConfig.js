@@ -80,6 +80,21 @@ enableNetwork(db)
     console.log('📴 App will work in offline mode with cached data');
   });
 
+// Suppress Firestore connection retry warnings (they're expected and harmless)
+const originalConsoleError = console.error;
+console.error = (...args) => {
+  // Filter out Firestore connection warnings
+  if (
+    args[0]?.includes?.('Could not reach Cloud Firestore backend') ||
+    args[0]?.includes?.('Connection failed') ||
+    args[0]?.toString?.().includes?.('code=unavailable')
+  ) {
+    // Silently ignore connection retry warnings
+    return;
+  }
+  originalConsoleError(...args);
+};
+
 // Add a global error handler for auth
 auth.onAuthStateChanged(
   (user) => {

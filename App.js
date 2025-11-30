@@ -2,49 +2,76 @@ import * as React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Text } from 'react-native';
 import { app as firebaseApp, db } from './firebaseConfig';
+
+// OPTIMIZATION: Lazy load screens to improve initial load time
+// Core screens loaded immediately
 import LoginScreen from './loginscreen';
 import SignupScreen from './signupscreen';
-import WithPhoneScreen from './withphonescreen';
-import WithEmailScreen from './withemailscreen';
-import OtpVerificationScreen from './otpverify';
-import CreateAccountScreen from './createaccount';
-import AgeVerificationScreen from './ageverification';
-import AccountLoginScreen from './accountloginscreen';
-import SplashScreen from './splashscreen';
 import HomeScreen from './homescreen';
-import SearchBarScreen from './searchbar';
-import NotificationScreen from './notification';
 import TabBarScreen from './tabbarview';
-import CommunityScreen from './community';
-import CommunityDetailScreen from './communitydetail';
-import ExploreScreen from './explore';
-import GroupInfoScreen from './groupinfo';
-import MessageScreen from './messagescreen';
-import ChatScreen from './chatscreen';
-import MarketPlaceScreen from './marketplace';
-import MarketPlaceExploreScreen from './marketplaceexplore';
-import StickerPreviewScreen from './stickerpreview';
-import PaymentDetailScreen from './paymentdetail';
-import PaymentSelectionScreen from './paymentselection';
-import CoinPurchaseScreen from './coinpurchase';
-import DiamondPurchaseScreen from './diamondpurchase';
-import ProfileScreen from './profile';
-import EditProfileScreen from './editprofile';
-import MyStoreScreen from './mystore';
-import StoreManagmentScreen from './storemanagment';
-import RewardScreen from './reward';
-import DailyRewardScreen from './dailyreward';
-import MembershipScreen from './membership';
-import WhatsHappeningScreen from './whatshappening';
-import CreateCommunityScreen from './CreateCommunityScreen';
-import EditCommunityScreen from './EditCommunityScreen';
-import GroupAudioCallScreen from './GroupAudioCallScreen';
-import ScreenSharingRoom from './ScreenSharingRoom';
-import RoleplayScreen from './RoleplayScreen';
+
+// Lazy load all other screens
+const WithPhoneScreen = React.lazy(() => import('./withphonescreen'));
+const WithEmailScreen = React.lazy(() => import('./withemailscreen'));
+const OtpVerificationScreen = React.lazy(() => import('./otpverify'));
+const CreateAccountScreen = React.lazy(() => import('./createaccount'));
+const AgeVerificationScreen = React.lazy(() => import('./ageverification'));
+const AccountLoginScreen = React.lazy(() => import('./accountloginscreen'));
+const SplashScreen = React.lazy(() => import('./splashscreen'));
+const SearchBarScreen = React.lazy(() => import('./searchbar'));
+const NotificationScreen = React.lazy(() => import('./notification'));
+const CommunityScreen = React.lazy(() => import('./community'));
+const CommunityDetailScreen = React.lazy(() => import('./communitydetail'));
+const ExploreScreen = React.lazy(() => import('./explore'));
+const GroupInfoScreen = React.lazy(() => import('./groupinfo'));
+const MessageScreen = React.lazy(() => import('./messagescreen'));
+const ChatScreen = React.lazy(() => import('./chatscreen'));
+const MarketPlaceScreen = React.lazy(() => import('./marketplace'));
+const MarketPlaceExploreScreen = React.lazy(() => import('./marketplaceexplore'));
+const StickerPreviewScreen = React.lazy(() => import('./stickerpreview'));
+const PaymentDetailScreen = React.lazy(() => import('./paymentdetail'));
+const PaymentSelectionScreen = React.lazy(() => import('./paymentselection'));
+const CoinPurchaseScreen = React.lazy(() => import('./coinpurchase'));
+const DiamondPurchaseScreen = React.lazy(() => import('./diamondpurchase'));
+const ProfileScreen = React.lazy(() => import('./profile'));
+const EditProfileScreen = React.lazy(() => import('./editprofile'));
+const MyStoreScreen = React.lazy(() => import('./mystore'));
+const StoreManagmentScreen = React.lazy(() => import('./storemanagment'));
+const RewardScreen = React.lazy(() => import('./reward'));
+const DailyRewardScreen = React.lazy(() => import('./dailyreward'));
+const MembershipScreen = React.lazy(() => import('./membership'));
+const WhatsHappeningScreen = React.lazy(() => import('./whatshappening'));
+const CreateCommunityScreen = React.lazy(() => import('./CreateCommunityScreen'));
+const EditCommunityScreen = React.lazy(() => import('./EditCommunityScreen'));
+const GroupAudioCallScreen = React.lazy(() => import('./GroupAudioCallScreen'));
+const ScreenSharingRoom = React.lazy(() => import('./ScreenSharingRoom'));
+const RoleplayScreen = React.lazy(() => import('./RoleplayScreen'));
+const EnhancedChatScreenV2 = React.lazy(() => import('./screens/EnhancedChatScreenV2'));
+const GroupChatCreationScreen = React.lazy(() => import('./screens/GroupChatCreationScreen'));
+const ChatSettingsScreen = React.lazy(() => import('./screens/ChatSettingsScreen'));
+const ForwardMessageScreen = React.lazy(() => import('./screens/ForwardMessageScreen'));
+const AddFriendsScreen = React.lazy(() => import('./AddFriendsScreen'));
+const NewGroupInfoScreen = React.lazy(() => import('./screens/GroupInfoScreen'));
+const AddGroupMembersScreen = React.lazy(() => import('./screens/AddGroupMembersScreen'));
+const MediaGalleryScreen = React.lazy(() => import('./screens/MediaGalleryScreen'));
+const StarredMessagesScreen = React.lazy(() => import('./screens/StarredMessagesScreen'));
+const SearchInChatScreen = React.lazy(() => import('./screens/SearchInChatScreen'));
 
 const Stack = createStackNavigator();
+
+// Lazy loading wrapper component
+const LazyScreen = ({ component: Component, ...props }) => (
+  <React.Suspense fallback={
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' }}>
+      <ActivityIndicator size="large" color="#fff" />
+      <Text style={{ color: '#fff', marginTop: 10 }}>Loading...</Text>
+    </View>
+  }>
+    <Component {...props} />
+  </React.Suspense>
+);
 
 export default function App() {
   const [initializing, setInitializing] = React.useState(true);
@@ -89,6 +116,7 @@ export default function App() {
         <Stack.Screen name="Explore" component={ExploreScreen} />
         <Stack.Screen name="GroupInfo" component={GroupInfoScreen} />
         <Stack.Screen name="Message" component={MessageScreen} />
+        <Stack.Screen name="AddFriends" component={AddFriendsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Chat" component={ChatScreen} />
         <Stack.Screen name="MarketPlace" component={MarketPlaceScreen} />
         <Stack.Screen name="Profile" component={ProfileScreen} />
@@ -110,6 +138,15 @@ export default function App() {
              <Stack.Screen name="GroupAudioCall" component={GroupAudioCallScreen}/>
              <Stack.Screen name="ScreenSharingRoom" component={ScreenSharingRoom}/>
              <Stack.Screen name="RoleplayScreen" component={RoleplayScreen}/>
+             <Stack.Screen name="EnhancedChatV2" component={EnhancedChatScreenV2} options={{ headerShown: false }}/>
+             <Stack.Screen name="GroupChatCreation" component={GroupChatCreationScreen} options={{ headerShown: false }}/>
+             <Stack.Screen name="ChatSettings" component={ChatSettingsScreen} options={{ headerShown: false }}/>
+             <Stack.Screen name="ForwardMessage" component={ForwardMessageScreen} options={{ headerShown: false }}/>
+             <Stack.Screen name="NewGroupInfo" component={NewGroupInfoScreen} options={{ headerShown: false }}/>
+             <Stack.Screen name="AddGroupMembers" component={AddGroupMembersScreen} options={{ headerShown: false }}/>
+             <Stack.Screen name="MediaGallery" component={MediaGalleryScreen} options={{ headerShown: false }}/>
+             <Stack.Screen name="StarredMessages" component={StarredMessagesScreen} options={{ headerShown: false }}/>
+             <Stack.Screen name="SearchInChat" component={SearchInChatScreen} options={{ headerShown: false }}/>
       </Stack.Navigator>
     </NavigationContainer>
   );

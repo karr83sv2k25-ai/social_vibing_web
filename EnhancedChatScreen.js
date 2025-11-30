@@ -33,7 +33,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { useChatState } from './hooks/useChatState';
 import { MessageBox } from './components/MessageBox';
 import { ScrollToBottomButton } from './components/ScrollToBottomButton';
-import EmojiSelector from 'react-native-emoji-selector';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadImageToHostinger, uploadVideoToHostinger } from './hostingerConfig';
 
@@ -111,7 +110,6 @@ export default function EnhancedChatScreen({ route, navigation }) {
 
   const [isLoading, setIsLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null);
   const flatListRef = useRef(null);
   const recordingTimerRef = useRef(null);
@@ -371,29 +369,6 @@ export default function EnhancedChatScreen({ route, navigation }) {
     }
   }, [setIsUserScrolling]);
 
-  // Handle emoji selection
-  const handleEmojiSelect = useCallback((emoji) => {
-    setMessageText(prev => prev + emoji);
-    setShowEmojiPicker(false);
-    // Auto-focus back to input after selection
-    setTimeout(() => {
-      messageInputRef.current?.focus();
-    }, 100);
-  }, [setMessageText]);
-
-  // Toggle emoji picker
-  const handleEmojiPress = useCallback(() => {
-    if (showEmojiPicker) {
-      setShowEmojiPicker(false);
-      messageInputRef.current?.focus();
-    } else {
-      Keyboard.dismiss();
-      setTimeout(() => {
-        setShowEmojiPicker(true);
-      }, 100);
-    }
-  }, [showEmojiPicker]);
-
   // Scroll to bottom
   const scrollToBottom = useCallback(() => {
     flatListRef.current?.scrollToEnd({ animated: true });
@@ -502,26 +477,10 @@ export default function EnhancedChatScreen({ route, navigation }) {
         />
 
         {/* Message Box - Always Visible */}
-        {/* Emoji Picker */}
-        {showEmojiPicker && (
-          <View style={styles.emojiPickerContainer}>
-            <EmojiSelector
-              onEmojiSelected={handleEmojiSelect}
-              showSearchBar={false}
-              showTabs={true}
-              showHistory={false}
-              columns={8}
-              category={undefined}
-              theme={"#0B0B0E"}
-            />
-          </View>
-        )}
-
         <MessageBox
           value={messageText}
           onChangeText={setMessageText}
           onSend={handleSend}
-          onEmojiPress={handleEmojiPress}
           onAttachPress={handleAttachment}
           onVoiceRecordStart={handleVoiceStart}
           onVoiceRecordEnd={handleVoiceEnd}
@@ -531,6 +490,8 @@ export default function EnhancedChatScreen({ route, navigation }) {
           isRecording={isRecording}
           recordingDuration={recordingDuration}
         />
+
+
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -629,10 +590,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   avatarText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-  emojiPickerContainer: {
-    height: 300,
-    backgroundColor: '#0B0B0E',
-    borderTopWidth: 1,
-    borderTopColor: '#1F1F25',
-  },
+
 });

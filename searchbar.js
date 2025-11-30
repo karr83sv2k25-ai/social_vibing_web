@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, TouchableOpacity, StyleSheet, TextInput, Text, ScrollView, Image, Dimensions, ActivityIndicator } from 'react-native';
 import { Ionicons, Entypo } from '@expo/vector-icons';
 import { collection, getDocs, query, orderBy, onSnapshot, doc, getDoc } from 'firebase/firestore';
@@ -291,10 +291,11 @@ export default function HeaderWithSearch({ navigation }) {
     });
   };
 
-  const filteredUsers = filterData(users, search);
-  const filteredShops = filterData(shops, search);
-  const filteredCommunities = filterData(communities, search);
-  const filteredPosts = filterData(posts, search);
+  // Hot-loading filters - updates instantly on every keystroke
+  const filteredUsers = useMemo(() => filterData(users, search), [users, search]);
+  const filteredShops = useMemo(() => filterData(shops, search), [shops, search]);
+  const filteredCommunities = useMemo(() => filterData(communities, search), [communities, search]);
+  const filteredPosts = useMemo(() => filterData(posts, search), [posts, search]);
 
   // User row
   const renderUserRow = (item) => (
@@ -447,6 +448,11 @@ export default function HeaderWithSearch({ navigation }) {
               placeholderTextColor="#aaa"
               value={search}
               onChangeText={setSearch}
+              autoFocus={false}
+              returnKeyType="search"
+              enablesReturnKeyAutomatically={false}
+              autoCorrect={false}
+              autoCapitalize="none"
             />
           </View>
         </View>
