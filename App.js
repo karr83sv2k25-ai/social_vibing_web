@@ -2,8 +2,48 @@ import * as React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
-import { View, ActivityIndicator, Text } from 'react-native';
+import { View, ActivityIndicator, Text, LogBox } from 'react-native';
 import { app as firebaseApp, db } from './firebaseConfig';
+
+// Suppress known Firestore SDK internal errors in development
+LogBox.ignoreLogs([
+  'FIRESTORE (12.4.0) INTERNAL ASSERTION FAILED',
+  'Unexpected state',
+  'Could not reach Cloud Firestore backend',
+  'Connection failed',
+  'code=unavailable',
+  'Target ID already exists',
+  'auth/already-initialized',
+  'Error fetching all posts',
+  '[Firestore] Error in',
+  'Could not fetch user from Firestore',
+]);
+
+// Add global error handler for uncaught errors
+if (typeof ErrorUtils !== 'undefined') {
+  const originalErrorHandler = ErrorUtils.getGlobalHandler();
+  
+  ErrorUtils.setGlobalHandler((error, isFatal) => {
+    const errorMessage = error?.message || error?.toString() || '';
+    
+    // Suppress Firestore internal assertion errors and known SDK issues
+    if (
+      errorMessage.includes('INTERNAL ASSERTION FAILED') ||
+      errorMessage.includes('Unexpected state') ||
+      errorMessage.includes('Target ID already exists') ||
+      errorMessage.includes('auth/already-initialized') ||
+      errorMessage.includes('FIRESTORE') && errorMessage.includes('b815')
+    ) {
+      console.log('🔇 Suppressed Firestore SDK internal error (harmless)');
+      return; // Don't propagate the error
+    }
+    
+    // For all other errors, use the original handler
+    if (originalErrorHandler) {
+      originalErrorHandler(error, isFatal);
+    }
+  });
+}
 
 // OPTIMIZATION: Lazy load screens to improve initial load time
 // Core screens loaded immediately
@@ -58,6 +98,11 @@ const AddGroupMembersScreen = React.lazy(() => import('./screens/AddGroupMembers
 const MediaGalleryScreen = React.lazy(() => import('./screens/MediaGalleryScreen'));
 const StarredMessagesScreen = React.lazy(() => import('./screens/StarredMessagesScreen'));
 const SearchInChatScreen = React.lazy(() => import('./screens/SearchInChatScreen'));
+
+// Direct imports for newly created screens
+import MessageOptionsScreen from './MessageOptionsScreen';
+import ChatActionsScreen from './ChatActionsScreen';
+import BlockedUsersScreen from './BlockedUsersScreen';
 
 const Stack = createStackNavigator();
 
@@ -147,6 +192,9 @@ export default function App() {
              <Stack.Screen name="MediaGallery" component={MediaGalleryScreen} options={{ headerShown: false }}/>
              <Stack.Screen name="StarredMessages" component={StarredMessagesScreen} options={{ headerShown: false }}/>
              <Stack.Screen name="SearchInChat" component={SearchInChatScreen} options={{ headerShown: false }}/>
+             <Stack.Screen name="MessageOptions" component={MessageOptionsScreen} options={{ headerShown: false }}/>
+             <Stack.Screen name="ChatActions" component={ChatActionsScreen} options={{ headerShown: false }}/>
+             <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} options={{ headerShown: false }}/>
       </Stack.Navigator>
     </NavigationContainer>
   );

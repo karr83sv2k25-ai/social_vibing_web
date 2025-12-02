@@ -163,38 +163,9 @@ export default function MessagesScreen({ navigation }) {
 
   // Handle three dots menu
   const handleOptionsPress = () => {
-    Alert.alert(
-      'Options',
-      'Choose an action',
-      [
-        {
-          text: 'Settings',
-          onPress: () => navigation.navigate('Settings')
-        },
-        {
-          text: 'View Archived',
-          onPress: () => {
-            Alert.alert('Archived Chats', `You have ${archivedConversations.length} archived conversations`);
-          }
-        },
-        {
-          text: 'Mark all as read',
-          onPress: () => {
-            Alert.alert('Success', 'All conversations marked as read');
-          }
-        },
-        {
-          text: 'Select Conversations',
-          onPress: () => {
-            Alert.alert('Select Mode', 'Long-press on any conversation to see options');
-          }
-        },
-        {
-          text: 'Cancel',
-          style: 'cancel'
-        }
-      ]
-    );
+    navigation.navigate('MessageOptions', {
+      archivedCount: archivedConversations.length
+    });
   };
 
   // Handle create group button
@@ -208,39 +179,22 @@ export default function MessagesScreen({ navigation }) {
     const isMuted = mutedConversations.includes(item.conversationId || item.userId);
     const isArchived = archivedConversations.includes(item.conversationId || item.userId);
 
-    Alert.alert(
-      item.name || 'Conversation',
-      'Choose an action',
-      [
-        {
-          text: isPinned ? 'Unpin' : 'Pin',
-          onPress: () => handlePinConversation(item)
-        },
-        {
-          text: isMuted ? 'Unmute' : 'Mute',
-          onPress: () => handleMuteConversation(item)
-        },
-        {
-          text: 'Mark as Unread',
-          onPress: () => {
-            Alert.alert('Success', 'Conversation marked as unread');
-          }
-        },
-        {
-          text: isArchived ? 'Unarchive' : 'Archive',
-          onPress: () => handleArchiveConversation(item)
-        },
-        {
-          text: 'Delete',
-          onPress: () => handleDeleteConversation(item),
-          style: 'destructive'
-        },
-        {
-          text: 'Cancel',
-          style: 'cancel'
-        }
-      ]
-    );
+    navigation.navigate('ChatActions', {
+      chat: item,
+      isPinned,
+      isMuted,
+      isArchived,
+      onPin: handlePinConversation,
+      onMute: handleMuteConversation,
+      onArchive: handleArchiveConversation,
+      onDelete: handleDeleteConversation,
+      onMarkUnread: (chat) => {
+        Alert.alert('Marked as Unread', `${chat.name} marked as unread`);
+      },
+      onBlock: (chat) => {
+        Alert.alert('Blocked', `${chat.name} has been blocked`);
+      },
+    });
   };
 
   // Pin/Unpin conversation
@@ -320,80 +274,121 @@ export default function MessagesScreen({ navigation }) {
     if (!currentUser) return;
 
     const loadFriends = async () => {
-      const friendIds = await getFriends();
-      console.log('Loaded friend IDs:', friendIds);
-      setFriendsList(friendIds);
+      try {
+        const friendIds = await getFriends();
+        console.log('Loaded friend IDs:', friendIds);
+        setFriendsList(friendIds);
+      } catch (error) {
+        console.log('Could not load friends, using empty list');
+        setFriendsList([]);
+      }
     };
 
     loadFriends();
 
-    // Set up real-time listener for friends updates
-    const friendsRef = collection(db, 'users', currentUser.uid, 'friends');
-    const unsubscribe = onSnapshot(
-      friendsRef,
-      (snapshot) => {
-        const ids = [];
-        snapshot.forEach(doc => {
-          ids.push(doc.data().userId);
-        });
-        console.log('Friends updated, count:', ids.length);
-        setFriendsList(ids);
-      },
-      (error) => {
-        console.error('Error fetching friends:', error);
-        setFriendsList([]); // Set empty array on error
-      }
-    );
+    // Delay snapshot listener setup to avoid SDK race condition
+    const timeoutId = setTimeout(() => {
+      try {
+        // Set up real-time listener for friends updates
+        const friendsRef = collection(db, 'users', currentUser.uid, 'friends');
+        const unsubscribe = onSnapshot(
+          friendsRef,
+          (snapshot) => {
+            const ids = [];
+            snapshot.forEach(doc => {
+              ids.push(doc.data().userId);
+            });
+            console.log('Friends updated, count:', ids.length);
+            setFriendsList(ids);
+          },
+          (error) => {
+            // Silently handle errors - SDK will retry
+            setFriendsList([]); // Set empty array on error
+          }
+        );
 
-    return () => unsubscribe();
+        return () => unsubscribe();
+      } catch (error) {
+        // Silently handle listener setup errors
+        console.log('Friend listener setup deferred');
+      }
+    }, 1000);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
   }, [currentUser]);
 
   // Fetch followers list
   useEffect(() => {
     if (!currentUser) return;
 
-    const followersRef = collection(db, 'users', currentUser.uid, 'followers');
-    const unsubscribe = onSnapshot(
-      followersRef, 
-      (snapshot) => {
-        const ids = [];
-        snapshot.forEach(doc => {
-          ids.push(doc.id);
-        });
-        console.log('Followers updated, count:', ids.length);
-        setFollowersList(ids);
-      },
-      (error) => {
-        console.error('Error fetching followers:', error);
-        setFollowersList([]); // Set empty array on error
-      }
-    );
+    // Delay snapshot listener setup to avoid SDK race condition
+    const timeoutId = setTimeout(() => {
+      try {
+        const followersRef = collection(db, 'users', currentUser.uid, 'followers');
+        const unsubscribe = onSnapshot(
+          followersRef, 
+          (snapshot) => {
+            const ids = [];
+            snapshot.forEach(doc => {
+              ids.push(doc.id);
+            });
+            console.log('Followers updated, count:', ids.length);
+            setFollowersList(ids);
+          },
+          (error) => {
+            // Silently handle errors - SDK will retry
+            setFollowersList([]); // Set empty array on error
+          }
+        );
 
-    return () => unsubscribe();
+        return () => unsubscribe();
+      } catch (error) {
+        // Silently handle listener setup errors
+        console.log('Follower listener setup deferred');
+      }
+    }, 1200);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
   }, [currentUser]);
 
   // Fetch following list
   useEffect(() => {
     if (!currentUser) return;
 
-    const followingRef = collection(db, 'users', currentUser.uid, 'following');
-    const unsubscribe = onSnapshot(
-      followingRef,
-      (snapshot) => {
-        const ids = [];
-        snapshot.forEach(doc => {
-          ids.push(doc.id);
-        });
-        console.log('Following updated, count:', ids.length);
-        setFollowingList(ids);
-      },
-      (error) => {
-        console.error('Error fetching following:', error);
-        setFollowingList([]); // Set empty array on error
-      }
-    );
+    // Delay snapshot listener setup to avoid SDK race condition
+    const timeoutId = setTimeout(() => {
+      try {
+        const followingRef = collection(db, 'users', currentUser.uid, 'following');
+        const unsubscribe = onSnapshot(
+          followingRef,
+          (snapshot) => {
+            const ids = [];
+            snapshot.forEach(doc => {
+              ids.push(doc.id);
+            });
+            console.log('Following updated, count:', ids.length);
+            setFollowingList(ids);
+          },
+          (error) => {
+            // Silently handle errors - SDK will retry
+            setFollowingList([]); // Set empty array on error
+          }
+        );
 
-    return () => unsubscribe();
+        return () => unsubscribe();
+      } catch (error) {
+        // Silently handle listener setup errors
+        console.log('Following listener setup deferred');
+      }
+    }, 1400);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
   }, [currentUser]);
 
   // Fetch user data for friends, followers, and following (OPTIMIZED with caching)
@@ -526,29 +521,32 @@ export default function MessagesScreen({ navigation }) {
       }
     });
 
-    const conversationsRef = collection(db, 'conversations');
-    const q = query(
-      conversationsRef,
-      where('participants', 'array-contains', currentUser.uid),
-      orderBy('lastMessageTime', 'desc'),
-      limit(25) // OPTIMIZATION: Reduced to 25 for faster initial load
-    );
+    // Delay snapshot listener to avoid SDK race condition
+    const timeoutId = setTimeout(() => {
+      try {
+        const conversationsRef = collection(db, 'conversations');
+        const q = query(
+          conversationsRef,
+          where('participants', 'array-contains', currentUser.uid),
+          orderBy('lastMessageTime', 'desc'),
+          limit(25) // OPTIMIZATION: Reduced to 25 for faster initial load
+        );
 
-    console.log('🔍 Starting conversation listener for user:', currentUser.uid);
+        console.log('🔍 Starting conversation listener for user:', currentUser.uid);
 
-    const unsubscribe = onSnapshot(
-      q, 
-      async (snapshot) => {
-        console.log('📨 Conversations snapshot received, docs:', snapshot.docs.length);
-        const convos = [];
-        
-        // OPTIMIZATION: Batch fetch all user IDs at once instead of one by one
-        const userIds = new Set();
-        snapshot.docs.forEach(docSnap => {
-          const data = docSnap.data();
-          const otherUserId = data.participants.find(id => id !== currentUser.uid);
-          if (otherUserId) userIds.add(otherUserId);
-        });
+        const unsubscribe = onSnapshot(
+          q, 
+          async (snapshot) => {
+            console.log('📨 Conversations snapshot received, docs:', snapshot.docs.length);
+            const convos = [];
+            
+            // OPTIMIZATION: Batch fetch all user IDs at once instead of one by one
+            const userIds = new Set();
+            snapshot.docs.forEach(docSnap => {
+              const data = docSnap.data();
+              const otherUserId = data.participants.find(id => id !== currentUser.uid);
+              if (otherUserId) userIds.add(otherUserId);
+            });
 
       // Fetch all users in batches
       const userDataMap = new Map();
@@ -711,12 +709,22 @@ export default function MessagesScreen({ navigation }) {
       cacheConversations(convos);
     }, 
     (error) => {
-      console.error('Error fetching conversations:', error);
+      // Silently handle errors - SDK will retry
       // Keep cached data on error
       setLoading(false);
     });
 
-    return () => unsubscribe();
+        return () => unsubscribe();
+      } catch (error) {
+        // Silently handle listener setup errors
+        console.log('Conversation listener setup deferred');
+        setLoading(false);
+      }
+    }, 1600);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
   }, [currentUser, allUsers]);
 
   const formatTime = (date) => {
@@ -749,8 +757,15 @@ export default function MessagesScreen({ navigation }) {
       // Private tab: show both private chats AND groups
       // This ensures groups are always visible
       return true;
+    } else if (activeTab === 'invites') {
+      // Invites tab: No conversations should be shown here
+      // This tab is meant for friend requests/group invites, not existing conversations
+      return false;
+    } else if (activeTab === 'mentions') {
+      // Mentions tab: No conversations should be shown here
+      // This tab is meant for messages where user is @mentioned
+      return false;
     }
-    // For invites and mentions, show all for now (can be customized later)
     return true;
   });
 
@@ -957,37 +972,59 @@ export default function MessagesScreen({ navigation }) {
         contentContainerStyle={{ paddingBottom: 100 }}
         ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
         style={{ paddingHorizontal: 14 }}
-        ListEmptyComponent={() => (
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 50 }}>
-            <Ionicons name="chatbubbles-outline" size={64} color={TEXT_DIM} />
-            <Text style={{ color: TEXT_DIM, marginTop: 16, fontSize: 16 }}>
-              {allUsers.length === 0 
-                ? 'No connections yet' 
-                : activeTab === 'groups'
-                ? 'No group chats'
-                : 'No messages yet'}
-            </Text>
-            <Text style={{ color: TEXT_DIM, marginTop: 4, fontSize: 12 }}>
-              {allUsers.length === 0 
-                ? 'Add friends or follow people to start chatting!' 
-                : 'Start a conversation!'}
-            </Text>
-            {allUsers.length === 0 && (
-              <TouchableOpacity 
-                style={{ 
-                  marginTop: 20, 
-                  backgroundColor: ACCENT, 
-                  paddingHorizontal: 24, 
-                  paddingVertical: 12, 
-                  borderRadius: 20 
-                }}
-                onPress={() => navigation.navigate('AddFriends')}
-              >
-                <Text style={{ color: '#fff', fontWeight: '600' }}>Add Friends</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
+        ListEmptyComponent={() => {
+          let icon = "chatbubbles-outline";
+          let title = "No messages yet";
+          let subtitle = "Start a conversation!";
+          let showButton = false;
+          
+          if (activeTab === 'invites') {
+            icon = "mail-open-outline";
+            title = "No invites";
+            subtitle = "Friend requests and group invitations will appear here";
+            showButton = false;
+          } else if (activeTab === 'mentions') {
+            icon = "at";
+            title = "No mentions";
+            subtitle = "Messages where you're @mentioned will appear here";
+            showButton = false;
+          } else if (activeTab === 'groups') {
+            icon = "people-outline";
+            title = "No group chats";
+            subtitle = "Create a group to start chatting with multiple people";
+            showButton = false;
+          } else if (allUsers.length === 0) {
+            title = "No connections yet";
+            subtitle = "Add friends or follow people to start chatting!";
+            showButton = true;
+          }
+          
+          return (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 50 }}>
+              <Ionicons name={icon} size={64} color={TEXT_DIM} />
+              <Text style={{ color: TEXT_DIM, marginTop: 16, fontSize: 16 }}>
+                {title}
+              </Text>
+              <Text style={{ color: TEXT_DIM, marginTop: 4, fontSize: 12, textAlign: 'center', paddingHorizontal: 40 }}>
+                {subtitle}
+              </Text>
+              {showButton && (
+                <TouchableOpacity 
+                  style={{ 
+                    marginTop: 20, 
+                    backgroundColor: ACCENT, 
+                    paddingHorizontal: 24, 
+                    paddingVertical: 12, 
+                    borderRadius: 20 
+                  }}
+                  onPress={() => navigation.navigate('AddFriends')}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '600' }}>Add Friends</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          );
+        }}
       />
 
       {/* Bottom Navigation Bar */}

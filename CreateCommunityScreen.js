@@ -14,9 +14,8 @@ import {
 } from "react-native";
 import { launchImageLibraryAsync, MediaTypeOptions, requestMediaLibraryPermissionsAsync } from 'expo-image-picker';
 import { uploadImageToHostinger } from './hostingerConfig';
-import { firebaseApp } from './firebaseConfig';
+import { db, auth } from './firebaseConfig';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
 import { Ionicons } from "@expo/vector-icons";
 
 export default function CreateCommunityScreen({ navigation }) {
@@ -186,7 +185,6 @@ export default function CreateCommunityScreen({ navigation }) {
       // db is now imported globally
       
       // Get current user ID
-      const auth = getAuth(firebaseApp);
       const currentUserId = auth.currentUser?.uid;
       
       if (!currentUserId) {

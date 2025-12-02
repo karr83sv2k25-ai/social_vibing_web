@@ -2,7 +2,7 @@
   "expo": {
     "name": "Fiver Project",
     "slug": "fiver-project",
-    "owner": "zainulabideen777",
+    "owner": "karr83_sv",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
@@ -20,7 +20,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "This app needs access to your camera to take photos for posts.",
         "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select images for posts.",
-        "NSMicrophoneUsageDescription": "This app needs access to your microphone to record voice messages and for live voice chat."
+        "NSMicrophoneUsageDescription": "This app needs access to your microphone to record voice messages and for live voice chat.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -50,7 +51,7 @@
       "FIREBASE_APP_ID": "1:907907966035:web:eca4797d3d76e6f00552a6",
       "FIREBASE_MEASUREMENT_ID": "G-496NQLYE01",
       "eas": {
-        "projectId": "373dbda9-b168-4a8e-9961-b78f7c133318"
+        "projectId": "10533028-1369-4381-9c96-3afcbc67ee5e"
       }
     },
     "plugins": [

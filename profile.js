@@ -186,8 +186,7 @@ export default function ProfileScreen() {
         try {
           await updateDoc(userRef, { visits: increment(1) });
         } catch (err) {
-          // ignore errors for increment (e.g., permission)
-          console.error('Error incrementing visits:', err);
+          // Silently ignore permission errors - visits increment is optional
         }
       })();
     }

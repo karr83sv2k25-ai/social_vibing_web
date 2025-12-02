@@ -16,7 +16,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { collection, query, orderBy, onSnapshot, addDoc, doc, setDoc, serverTimestamp, getDoc, limit, where, getDocs, updateDoc } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, addDoc, doc, setDoc, serverTimestamp, getDoc, limit, where, getDocs, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db, auth } from './firebaseConfig';
 import { uploadImageToHostinger } from './hostingerConfig';
 import { uploadFileToHostinger, getFileIcon, formatFileSize, getFileTypeLabel } from './utils/fileUpload';
@@ -109,11 +109,8 @@ export default function ChatScreen({ route, navigation }) {
         const blockRef = doc(db, 'users', currentUser.uid, 'blocked', otherUserId);
         const blockDoc = await getDoc(blockRef);
         
-        if (blockDoc.exists() && blockDoc.data()?.blocked === true) {
-          setIsBlocked(true);
-        } else {
-          setIsBlocked(false);
-        }
+        // If document exists, user is blocked (regardless of fields)
+        setIsBlocked(blockDoc.exists());
       } catch (error) {
         console.error('Error checking block status:', error);
       }
@@ -260,13 +257,13 @@ export default function ChatScreen({ route, navigation }) {
       const blockRef = doc(db, 'users', currentUser.uid, 'blocked', otherUserId);
       
       if (isBlocked) {
-        // Unblock user
-        await setDoc(blockRef, { blocked: false }, { merge: true });
+        // Unblock user - delete the document
+        await deleteDoc(blockRef);
         setIsBlocked(false);
         Alert.alert('User Unblocked', 'You can now send messages to this user.');
       } else {
-        // Block user
-        await setDoc(blockRef, { blocked: true, blockedAt: serverTimestamp() }, { merge: true });
+        // Block user - create document with blockedAt timestamp
+        await setDoc(blockRef, { blockedAt: serverTimestamp() });
         setIsBlocked(true);
         Alert.alert(
           'User Blocked', 
