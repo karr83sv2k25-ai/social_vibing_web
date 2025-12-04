@@ -8,18 +8,53 @@ import {
   ScrollView,
   Image,
   Dimensions,
+  Alert,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons'; // ✅ Added for arrow icon
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db, auth } from './firebaseConfig';
 
 const { width } = Dimensions.get('window');
 
 export default function SplashScreens({ navigation }) {
   const [screen, setScreen] = useState(1);
+  const [selectedInterests, setSelectedInterests] = useState([]);
 
   const handleNext = () => {
     if (screen < 3) {
       setScreen(screen + 1);
     } else {
+      navigation.navigate('LoginScreen');
+    }
+  };
+
+  const toggleInterest = (interest) => {
+    if (selectedInterests.includes(interest)) {
+      setSelectedInterests(selectedInterests.filter(i => i !== interest));
+    } else {
+      setSelectedInterests([...selectedInterests, interest]);
+    }
+  };
+
+  const saveInterestsAndContinue = async () => {
+    try {
+      // Save to AsyncStorage for non-authenticated users
+      await AsyncStorage.setItem('userInterests', JSON.stringify(selectedInterests));
+      
+      // If user is authenticated, save to Firestore
+      if (auth.currentUser) {
+        const userRef = doc(db, 'users', auth.currentUser.uid);
+        await updateDoc(userRef, {
+          interests: selectedInterests,
+          interestsUpdatedAt: new Date().toISOString()
+        });
+      }
+      
+      navigation.navigate('LoginScreen');
+    } catch (error) {
+      console.error('Error saving interests:', error);
+      // Continue anyway
       navigation.navigate('LoginScreen');
     }
   };
@@ -37,10 +72,12 @@ export default function SplashScreens({ navigation }) {
         resizeMode="cover">
         <View style={styles.overlayLeft}>
           <Text style={styles.titleLeft}>
-            {screen === 1 ? 'Welcome!' : 'Let’s Go!'}
+            {screen === 1 ? 'Welcome to Social Vibing!' : 'Connect & Share'}
           </Text>
           <Text style={styles.subTextLeft}>
-            Lorum ipsum Lorum ipsum{'\n'}Lorum ipsum
+            {screen === 1 
+              ? 'Join our vibrant community to share\nmoments, chat, and connect with friends'
+              : 'Create communities, share experiences,\nand vibe with like-minded people'}
           </Text>
 
           {/* Centered Dots */}
@@ -100,14 +137,29 @@ export default function SplashScreens({ navigation }) {
             { img: require('./assets/s7.jpg'), title: 'Art' },
             { img: require('./assets/s8.jpg'), title: 'Lifestyle' },
             { img: require('./assets/s9.jpg'), title: 'Tech' },
-          ].map((item, index) => (
-            <View key={index} style={styles.boxWrapper}>
-              <TouchableOpacity style={styles.box}>
-                <Image source={item.img} style={styles.boxImage} />
-              </TouchableOpacity>
-              <Text style={styles.boxTitle}>{item.title}</Text>
-            </View>
-          ))}
+          ].map((item, index) => {
+            const isSelected = selectedInterests.includes(item.title);
+            return (
+              <View key={index} style={styles.boxWrapper}>
+                <TouchableOpacity 
+                  style={[
+                    styles.box,
+                    isSelected && styles.boxSelected
+                  ]}
+                  onPress={() => toggleInterest(item.title)}
+                  activeOpacity={0.7}
+                >
+                  <Image source={item.img} style={styles.boxImage} />
+                  {isSelected && (
+                    <View style={styles.checkmarkOverlay}>
+                      <Ionicons name="checkmark-circle" size={30} color="#05FF00" />
+                    </View>
+                  )}
+                </TouchableOpacity>
+                <Text style={styles.boxTitle}>{item.title}</Text>
+              </View>
+            );
+          })}
         </View>
 
         {/* Dots Indicator */}
@@ -119,10 +171,12 @@ export default function SplashScreens({ navigation }) {
 
         {/* Next Button */}
         <TouchableOpacity
-          onPress={() => navigation.navigate('TabBar')}
+          onPress={saveInterestsAndContinue}
           activeOpacity={0.8}
           style={styles.customNextButton}>
-          <Text style={styles.customNextText}>Next</Text>
+          <Text style={styles.customNextText}>
+            {selectedInterests.length > 0 ? `Continue (${selectedInterests.length} selected)` : 'Skip'}
+          </Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -263,6 +317,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.05)',
+    position: 'relative',
+  },
+
+  boxSelected: {
+    borderColor: '#05FF00',
+    borderWidth: 2,
+    backgroundColor: 'rgba(5, 255, 0, 0.1)',
+  },
+
+  checkmarkOverlay: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 15,
   },
 
   boxImage: {

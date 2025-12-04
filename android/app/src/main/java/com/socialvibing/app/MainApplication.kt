@@ -1,4 +1,4 @@
-package com.meharbilawalali.fiverproject
+package com.socialvibing.app
 
 import android.app.Application
 import android.content.res.Configuration

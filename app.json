@@ -1,11 +1,12 @@
 {
   "expo": {
-    "name": "Fiver Project",
-    "slug": "fiver-project",
+    "name": "Social Vibing",
+    "slug": "social-vibing",
     "owner": "karr83_sv",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "icon": "./assets/app-icon.png",
     "splash": {
       "image": "./assets/splash1.png",
       "resizeMode": "contain",
@@ -16,7 +17,7 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.meharbilawalali.fiverproject",
+      "bundleIdentifier": "com.socialvibing.app",
       "infoPlist": {
         "NSCameraUsageDescription": "This app needs access to your camera to take photos for posts.",
         "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select images for posts.",
@@ -26,10 +27,10 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/profile.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/app-icon.png",
+        "backgroundColor": "#1a3a52"
       },
-      "package": "com.meharbilawalali.fiverproject",
+      "package": "com.socialvibing.app",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
@@ -51,7 +52,7 @@
       "FIREBASE_APP_ID": "1:907907966035:web:eca4797d3d76e6f00552a6",
       "FIREBASE_MEASUREMENT_ID": "G-496NQLYE01",
       "eas": {
-        "projectId": "10533028-1369-4381-9c96-3afcbc67ee5e"
+        "projectId": "06df50b7-56f1-4fb8-a7c3-2a3310dd68bb"
       }
     },
     "plugins": [
