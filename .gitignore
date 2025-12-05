@@ -1,2 +1,6 @@
 node_modules
 \n# Ignore backend config keys\nbackend/config/*.json
+
+# Firebase service account keys (SECURITY: Never commit these!)
+serviceAccountKey.json
+*-firebase-adminsdk-*.json

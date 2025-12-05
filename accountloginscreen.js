@@ -21,7 +21,7 @@ import {
 } from '@expo-google-fonts/manrope';
 import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
 import { app, db } from './firebaseConfig';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
@@ -99,24 +99,66 @@ export default function LoginScreen({ navigation }) {
       
       console.log('✅ Login successful for user:', user.uid);
       
-      // Verify user document exists in Firestore, create if missing
+      // Verify user document exists in Firestore, create/update if missing or incomplete
       try {
         const userRef = doc(db, 'users', user.uid);
         const userSnap = await getDoc(userRef);
         
         if (!userSnap.exists()) {
-          console.log('📝 User document not found, creating one...');
-          // Create basic user document
+          console.log('📝 User document not found, creating complete user profile for migrated user...');
+          // Create complete user document with all required fields for old/migrated users
           await setDoc(userRef, {
             email: user.email,
             displayName: user.displayName || email.split('@')[0],
-            profileImage: user.photoURL || null,
-            createdAt: new Date().toISOString(),
+            firstName: user.displayName?.split(' ')[0] || email.split('@')[0],
+            lastName: user.displayName?.split(' ')[1] || '',
+            profileImage: user.photoURL || '',
+            phoneNumber: user.phoneNumber || '',
+            createdAt: user.metadata?.creationTime || new Date().toISOString(),
+            lastLogin: new Date().toISOString(),
+            // Social stats - initialize for old users
+            followers: 0,
+            following: 0,
+            friends: 0,
+            visits: 0,
+            // Profile defaults
+            bio: '',
+            username: email.split('@')[0],
             characterCollection: [],
+            interests: [],
+            // Migration flag to track old users
+            migratedFromWeb: true,
+            migrationDate: new Date().toISOString(),
           });
-          console.log('✅ User document created');
+          console.log('✅ Complete user document created for migrated user');
         } else {
-          console.log('✅ User document exists');
+          console.log('✅ User document exists, checking for required fields...');
+          const userData = userSnap.data();
+          const updates = {};
+          
+          // Check and add missing required fields for old users
+          if (!userData.firstName) updates.firstName = user.displayName?.split(' ')[0] || email.split('@')[0];
+          if (!userData.lastName) updates.lastName = user.displayName?.split(' ')[1] || '';
+          if (!userData.username) updates.username = email.split('@')[0];
+          if (userData.followers === undefined) updates.followers = 0;
+          if (userData.following === undefined) updates.following = 0;
+          if (userData.friends === undefined) updates.friends = 0;
+          if (userData.visits === undefined) updates.visits = 0;
+          if (!userData.bio) updates.bio = '';
+          if (!userData.profileImage) updates.profileImage = '';
+          if (!userData.characterCollection) updates.characterCollection = [];
+          if (!userData.interests) updates.interests = [];
+          
+          // Always update last login
+          updates.lastLogin = new Date().toISOString();
+          
+          if (Object.keys(updates).length > 1) { // More than just lastLogin
+            console.log('📝 Updating user document with missing fields:', Object.keys(updates));
+            await updateDoc(userRef, updates);
+            console.log('✅ User document updated with required fields');
+          } else {
+            console.log('✅ User document has all required fields');
+          }
         }
       } catch (firestoreError) {
         console.warn('⚠️  Firestore check failed, but auth succeeded:', firestoreError);
