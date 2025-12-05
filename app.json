@@ -58,6 +58,7 @@
     "plugins": [
       "expo-dev-client",
       "expo-font",
+      "./plugins/withPodfile",
       [
         "expo-build-properties",
         {
@@ -66,6 +67,10 @@
             "enableProguardInReleaseBuilds": false,
             "enableShrinkResourcesInReleaseBuilds": false,
             "enableMinifyInReleaseBuilds": false
+          },
+          "ios": {
+            "useFrameworks": "static",
+            "deploymentTarget": "13.4"
           }
         }
       ],
