@@ -68,7 +68,6 @@
             "enableMinifyInReleaseBuilds": false
           },
           "ios": {
-            "useFrameworks": "static",
             "deploymentTarget": "15.1"
           }
         }
