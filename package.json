@@ -49,6 +49,13 @@
   "devDependencies": {
     "@react-native-community/cli": "latest"
   },
+  "overrides": {
+    "react-native-phone-number-input": {
+      "react": "19.1.0",
+      "react-dom": "19.1.0",
+      "react-native-web": "^0.21.0"
+    }
+  },
   "name": "Fiver Project",
   "version": "1.0.0",
   "scripts": {

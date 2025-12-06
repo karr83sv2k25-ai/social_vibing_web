@@ -1,5 +1,8 @@
-node_modules
-\n# Ignore backend config keys\nbackend/config/*.json
+﻿node_modules
+.expo/
+
+# Ignore backend config keys
+backend/config/*.json
 
 # Firebase service account keys (SECURITY: Never commit these!)
 serviceAccountKey.json
