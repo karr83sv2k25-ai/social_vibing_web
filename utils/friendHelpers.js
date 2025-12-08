@@ -108,6 +108,51 @@ export async function acceptFriendRequest(requestId, fromUserId) {
 
     await batch.commit();
 
+    // Create a private conversation between the two users
+    try {
+      const conversationsRef = collection(db, 'conversations');
+      
+      // Check if conversation already exists
+      const q = query(
+        conversationsRef,
+        where('participants', 'array-contains', currentUserId)
+      );
+      
+      const snapshot = await getDocs(q);
+      let conversationExists = false;
+      
+      // Check if conversation with this user already exists
+      for (const docSnap of snapshot.docs) {
+        const participants = docSnap.data().participants;
+        if (participants.includes(fromUserId) && participants.length === 2) {
+          conversationExists = true;
+          break;
+        }
+      }
+      
+      // Create new conversation if it doesn't exist
+      if (!conversationExists) {
+        const newConversationRef = doc(conversationsRef);
+        await setDoc(newConversationRef, {
+          type: 'private',
+          participants: [currentUserId, fromUserId],
+          lastMessage: '',
+          lastMessageTime: serverTimestamp(),
+          createdAt: serverTimestamp(),
+          unreadCount: {
+            [currentUserId]: 0,
+            [fromUserId]: 0,
+          },
+        });
+        console.log('✅ Private conversation created between users');
+      } else {
+        console.log('✅ Conversation already exists');
+      }
+    } catch (convError) {
+      console.error('Error creating conversation:', convError);
+      // Don't fail the friend request acceptance if conversation creation fails
+    }
+
     return { success: true, message: 'Friend request accepted' };
   } catch (error) {
     console.error('Error accepting friend request:', error);

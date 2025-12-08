@@ -301,24 +301,83 @@ const MessageRow = memo(({
             {/* Display Characters */}
             {msg.characters && msg.characters.length > 0 && (
               <View style={styles.roleplayCharactersContainer}>
-                <Text style={styles.roleplayCharactersLabel}>Characters:</Text>
+                <Text style={styles.roleplayCharactersLabel}>
+                  {msg.characters.length} {msg.characters.length === 1 ? 'Character' : 'Characters'}:
+                </Text>
                 <View style={styles.roleplayCharactersList}>
-                  {msg.characters.slice(0, 3).map((char, index) => (
-                    <View key={index} style={styles.characterBadge}>
-                      <Text style={styles.characterBadgeText}>
-                        {char.name}
-                        {char.gender && ` • ${char.gender.charAt(0)}`}
-                        {char.age && ` • ${char.age}`}
-                      </Text>
+                  {msg.characters.map((char, index) => (
+                    <View key={index} style={styles.roleplayCharacterCard}>
+                      {/* Character Avatar */}
+                      {char.avatar ? (
+                        <Image 
+                          source={{ uri: char.avatar }} 
+                          style={styles.roleplayCharacterAvatar}
+                        />
+                      ) : (
+                        <View style={styles.roleplayCharacterAvatarPlaceholder}>
+                          <Ionicons name="person" size={24} color="#666" />
+                        </View>
+                      )}
+                      
+                      <View style={styles.roleplayCharacterInfo}>
+                        {/* Character Name with Theme Color */}
+                        <Text 
+                          style={[
+                            styles.roleplayCharacterName,
+                            char.themeColor && { color: char.themeColor }
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {char.name}
+                        </Text>
+                        
+                        {/* Subtitle */}
+                        {char.subtitle && (
+                          <Text style={styles.roleplayCharacterSubtitle} numberOfLines={1}>
+                            {char.subtitle}
+                          </Text>
+                        )}
+                        
+                        {/* Author */}
+                        <Text style={styles.roleplayCharacterAuthor}>
+                          by @{char.ownerName || msg.senderName || 'Unknown'}
+                        </Text>
+                        
+                        {/* Tags */}
+                        {char.tags && char.tags.length > 0 && (
+                          <View style={styles.roleplayCharacterTags}>
+                            {char.tags.slice(0, 2).map((tag, tagIndex) => (
+                              <View key={tagIndex} style={styles.roleplayCharacterTag}>
+                                <Text style={styles.roleplayCharacterTagText}>{tag}</Text>
+                              </View>
+                            ))}
+                            {char.tags.length > 2 && (
+                              <Text style={styles.roleplayCharacterMoreTags}>+{char.tags.length - 2}</Text>
+                            )}
+                          </View>
+                        )}
+                        
+                        {/* Attributes */}
+                        <View style={styles.roleplayCharacterAttributes}>
+                          {char.gender && (
+                            <Text style={styles.roleplayCharacterAttribute}>
+                              {char.gender}
+                            </Text>
+                          )}
+                          {char.age && (
+                            <Text style={styles.roleplayCharacterAttribute}>
+                              • {char.age} yrs
+                            </Text>
+                          )}
+                          {char.language && (
+                            <Text style={styles.roleplayCharacterAttribute}>
+                              • {char.language}
+                            </Text>
+                          )}
+                        </View>
+                      </View>
                     </View>
                   ))}
-                  {msg.characters.length > 3 && (
-                    <View style={styles.characterBadge}>
-                      <Text style={styles.characterBadgeText}>
-                        +{msg.characters.length - 3} more
-                      </Text>
-                    </View>
-                  )}
                 </View>
               </View>
             )}
@@ -577,14 +636,27 @@ export default function GroupInfoScreen() {
   const [showMiniScreen, setShowMiniScreen] = useState(null); // 'voice', 'screening', 'roleplay'
   
   // Roleplay character creation (3 pages)
-  const [roleplayPage, setRoleplayPage] = useState(1); // 1, 2, 3
+  const [roleplayPage, setRoleplayPage] = useState(1); // 1, 2, 3, 4
+  const [characterAvatar, setCharacterAvatar] = useState('');
   const [characterName, setCharacterName] = useState('');
+  const [characterSubtitle, setCharacterSubtitle] = useState('');
+  const [characterThemeColor, setCharacterThemeColor] = useState('#FFD700');
   const [characterGender, setCharacterGender] = useState('');
+  const [characterLanguage, setCharacterLanguage] = useState('English');
+  const [characterTags, setCharacterTags] = useState([]);
+  const [customTag, setCustomTag] = useState('');
   const [characterAge, setCharacterAge] = useState('');
+  const [characterHeight, setCharacterHeight] = useState('');
   const [characterDescription, setCharacterDescription] = useState('');
+  const [characterGreeting, setCharacterGreeting] = useState('');
   const [characterCollection, setCharacterCollection] = useState([]); // All created characters
   const [selectedCharactersForSession, setSelectedCharactersForSession] = useState([]); // Characters selected for this roleplay
   const [editingCharacterId, setEditingCharacterId] = useState(null); // For editing existing character
+  
+  // Predefined tag suggestions
+  const suggestedTags = ['Friendly', 'Romantic', 'Mysterious', 'Adventurous', 'Wise', 'Playful', 'Serious', 'Funny', 'Creative', 'Athletic', 'Intellectual', 'Caring'];
+  const themeColors = ['#FFD700', '#FF6B6B', '#4CAF50', '#2196F3', '#9C27B0', '#FF9800', '#E91E63', '#00BCD4', '#8BC34A', '#FF5722'];
+  const languages = ['English', 'Urdu', 'Hindi', 'Arabic', 'Spanish', 'French', 'German', 'Japanese', 'Korean', 'Chinese'];
   
   // Text color picker
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -2865,7 +2937,7 @@ export default function GroupInfoScreen() {
   // Character Collection Management Functions
   const saveCharacterToCollection = async () => {
     if (!characterName.trim()) {
-      Alert.alert('Required', 'Please enter a role name');
+      Alert.alert('Required', 'Please enter a character name');
       return;
     }
 
@@ -2881,10 +2953,17 @@ export default function GroupInfoScreen() {
           char.id === editingCharacterId
             ? {
                 ...char,
+                avatar: characterAvatar,
                 name: characterName.trim(),
+                subtitle: characterSubtitle.trim(),
+                themeColor: characterThemeColor,
                 gender: characterGender,
+                language: characterLanguage,
+                tags: characterTags,
                 age: characterAge,
+                height: characterHeight,
                 description: characterDescription.trim(),
+                greeting: characterGreeting.trim(),
                 updatedAt: new Date().toISOString(),
               }
             : char
@@ -2893,10 +2972,17 @@ export default function GroupInfoScreen() {
         // Add new character
         const newCharacter = {
           id: Date.now().toString(),
+          avatar: characterAvatar,
           name: characterName.trim(),
+          subtitle: characterSubtitle.trim(),
+          themeColor: characterThemeColor,
           gender: characterGender,
+          language: characterLanguage,
+          tags: characterTags,
           age: characterAge,
+          height: characterHeight,
           description: characterDescription.trim(),
+          greeting: characterGreeting.trim(),
           createdAt: new Date().toISOString(),
         };
         updatedCollection = [...characterCollection, newCharacter];
@@ -2911,12 +2997,19 @@ export default function GroupInfoScreen() {
       setCharacterCollection(updatedCollection);
 
       // Reset form and go to collection page
+      setCharacterAvatar('');
       setCharacterName('');
+      setCharacterSubtitle('');
+      setCharacterThemeColor('#FFD700');
       setCharacterGender('');
+      setCharacterLanguage('English');
+      setCharacterTags([]);
       setCharacterAge('');
+      setCharacterHeight('');
       setCharacterDescription('');
+      setCharacterGreeting('');
       setEditingCharacterId(null);
-      setRoleplayPage(3);
+      setRoleplayPage(5);
 
       Alert.alert('Success', editingCharacterId ? 'Character updated!' : 'Character saved!');
     } catch (error) {
@@ -3001,8 +3094,17 @@ export default function GroupInfoScreen() {
         characters: selectedCharactersForSession.map(char => ({
           id: char.id,
           name: char.name,
+          avatar: char.avatar,
+          subtitle: char.subtitle,
+          themeColor: char.themeColor,
           gender: char.gender,
           age: char.age,
+          height: char.height,
+          language: char.language,
+          tags: char.tags,
+          description: char.description,
+          greeting: char.greeting,
+          ownerName: currentUser.name,
         })),
         participants: [currentUser.id],
         isActive: true,
@@ -4256,7 +4358,12 @@ export default function GroupInfoScreen() {
                       </View>
                     ) : (
                       allMembers.map((member, idx) => (
-                        <View key={member.id || idx} style={{alignItems: 'center', marginRight: 18}}>
+                        <TouchableOpacity 
+                          key={member.id || idx} 
+                          style={{alignItems: 'center', marginRight: 18}}
+                          onPress={() => navigation.navigate('Profile', { userId: member.id })}
+                          activeOpacity={0.7}
+                        >
                           <Image 
                             source={member.profileImage ? { uri: member.profileImage } : require('./assets/a1.png')} 
                             style={{width: 48, height: 48, borderRadius: 24, borderWidth: 2, borderColor: '#8B2EF0'}} 
@@ -4264,7 +4371,7 @@ export default function GroupInfoScreen() {
                           <Text style={{color: '#fff', fontSize: 12, fontWeight: '500', marginTop: 4, maxWidth: 60}} numberOfLines={1}>
                             {member.name || 'User'}
                           </Text>
-                        </View>
+                        </TouchableOpacity>
                       ))
                     )}
                   </ScrollView>
@@ -4360,10 +4467,15 @@ export default function GroupInfoScreen() {
                         {admins.map((member) => (
                         <View key={member.id} style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
                           <View style={{flexDirection:'row',alignItems:'center'}}>
+                            <TouchableOpacity
+                              onPress={() => navigation.navigate('Profile', { userId: member.id })}
+                              activeOpacity={0.7}
+                            >
                               <Image 
                                 source={member.profileImage ? { uri: member.profileImage } : require('./assets/a1.png')} 
                                 style={{width:48,height:48,borderRadius:24,marginRight:12}} 
                               />
+                            </TouchableOpacity>
                             <Text style={{color:'#fff',fontSize:15,fontWeight:'500'}}>{member.name}</Text>
                           </View>
                             {renderFollowButton(member.id)}
@@ -4378,10 +4490,15 @@ export default function GroupInfoScreen() {
                         {moderators.map((member) => (
                         <View key={member.id} style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
                           <View style={{flexDirection:'row',alignItems:'center'}}>
+                            <TouchableOpacity
+                              onPress={() => navigation.navigate('Profile', { userId: member.id })}
+                              activeOpacity={0.7}
+                            >
                               <Image 
                                 source={member.profileImage ? { uri: member.profileImage } : require('./assets/a1.png')} 
                                 style={{width:48,height:48,borderRadius:24,marginRight:12}} 
                               />
+                            </TouchableOpacity>
                             <Text style={{color:'#fff',fontSize:15,fontWeight:'500'}}>{member.name}</Text>
                           </View>
                             {renderFollowButton(member.id)}
@@ -4396,10 +4513,15 @@ export default function GroupInfoScreen() {
                         {recentlyJoined.map((member) => (
                         <View key={member.id} style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
                           <View style={{flexDirection:'row',alignItems:'center'}}>
+                            <TouchableOpacity
+                              onPress={() => navigation.navigate('Profile', { userId: member.id })}
+                              activeOpacity={0.7}
+                            >
                               <Image 
                                 source={member.profileImage ? { uri: member.profileImage } : require('./assets/a1.png')} 
                                 style={{width:48,height:48,borderRadius:24,marginRight:12}} 
                               />
+                            </TouchableOpacity>
                             <Text style={{color:'#fff',fontSize:15,fontWeight:'500'}}>{member.name}</Text>
                           </View>
                             {renderFollowButton(member.id)}
@@ -6046,10 +6168,33 @@ export default function GroupInfoScreen() {
             >
               <View style={styles.miniScreenHeader}>
                 <TouchableOpacity onPress={() => {
-                  if (roleplayPage > 1 && roleplayPage < 3) {
-                    setRoleplayPage(roleplayPage - 1);
-                  } else if (roleplayPage === 1) {
+                  if (roleplayPage === 1) {
+                    // On page 1 (choice screen), close modal
                     setShowMiniScreen(null);
+                    setRoleplayPage(1);
+                    setCharacterAvatar('');
+                    setCharacterName('');
+                    setCharacterSubtitle('');
+                    setCharacterThemeColor('#FFD700');
+                    setCharacterGender('');
+                    setCharacterLanguage('English');
+                    setCharacterTags([]);
+                    setCharacterAge('');
+                    setCharacterHeight('');
+                    setCharacterDescription('');
+                    setCharacterGreeting('');
+                    setEditingCharacterId(null);
+                  } else if (roleplayPage === 2) {
+                    // From page 2 (basic info), go back to choice
+                    setRoleplayPage(1);
+                  } else if (roleplayPage === 3) {
+                    // From page 3 (personal details), go back to basic info
+                    setRoleplayPage(2);
+                  } else if (roleplayPage === 4) {
+                    // From page 4 (tags/description), go back to personal details
+                    setRoleplayPage(3);
+                  } else if (roleplayPage === 5) {
+                    // From page 5 (character collection), go back to choice
                     setRoleplayPage(1);
                     setCharacterName('');
                     setCharacterGender('');
@@ -6057,13 +6202,7 @@ export default function GroupInfoScreen() {
                     setCharacterDescription('');
                     setEditingCharacterId(null);
                   } else {
-                    // On page 3, back goes to character collection
-                    setRoleplayPage(3);
-                    setCharacterName('');
-                    setCharacterGender('');
-                    setCharacterAge('');
-                    setCharacterDescription('');
-                    setEditingCharacterId(null);
+                    setRoleplayPage(roleplayPage - 1);
                   }
                 }}>
                   <Ionicons name="arrow-back" size={28} color="#fff" />
@@ -6085,35 +6224,138 @@ export default function GroupInfoScreen() {
               </View>
 
               <ScrollView style={styles.miniScreenBody} showsVerticalScrollIndicator={false}>
-                {/* Page 1: Role Name */}
+                {/* Page 1: Choose Action - Create New or Use Existing */}
                 {roleplayPage === 1 && (
+                  <View style={styles.roleplayPageContent}>
+                    <View style={styles.featureIconContainer}>
+                      <Ionicons name="people" size={60} color="#FFD700" />
+                    </View>
+                    <Text style={styles.roleplayPageTitle}>Start Roleplay</Text>
+                    <Text style={styles.roleplayPageDesc}>Choose how you want to begin your roleplay session</Text>
+                    
+                    <TouchableOpacity
+                      style={styles.roleplayChoiceButton}
+                      onPress={() => setRoleplayPage(2)}
+                    >
+                      <View style={styles.roleplayChoiceIcon}>
+                        <Ionicons name="person-add" size={40} color="#FFD700" />
+                      </View>
+                      <View style={styles.roleplayChoiceContent}>
+                        <Text style={styles.roleplayChoiceTitle}>Create New Character</Text>
+                        <Text style={styles.roleplayChoiceDesc}>
+                          Create a brand new character with custom attributes
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={24} color="#888" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.roleplayChoiceButton}
+                      onPress={() => setRoleplayPage(5)}
+                    >
+                      <View style={styles.roleplayChoiceIcon}>
+                        <Ionicons name="albums" size={40} color="#4CAF50" />
+                      </View>
+                      <View style={styles.roleplayChoiceContent}>
+                        <Text style={styles.roleplayChoiceTitle}>Use Existing Characters</Text>
+                        <Text style={styles.roleplayChoiceDesc}>
+                          Select from your saved characters collection
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={24} color="#888" />
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* Page 2: Avatar, Name, Subtitle, Theme Color */}
+                {roleplayPage === 2 && (
                   <View style={styles.roleplayPageContent}>
                     <View style={styles.featureIconContainer}>
                       <Ionicons name="person-add" size={60} color="#FFD700" />
                     </View>
-                    <Text style={styles.roleplayPageTitle}>Role Name</Text>
-                    <Text style={styles.roleplayPageDesc}>What is your character's name?</Text>
+                    <Text style={styles.roleplayPageTitle}>Basic Info</Text>
+                    <Text style={styles.roleplayPageDesc}>Let's start with the basics</Text>
                     
+                    {/* Avatar */}
+                    <Text style={styles.attributeLabel}>Avatar</Text>
+                    <TouchableOpacity
+                      style={styles.avatarSelector}
+                      onPress={async () => {
+                        const result = await ImagePicker.launchImageLibraryAsync({
+                          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                          allowsEditing: true,
+                          aspect: [1, 1],
+                          quality: 0.8,
+                        });
+                        if (!result.canceled) {
+                          setCharacterAvatar(result.assets[0].uri);
+                        }
+                      }}
+                    >
+                      {characterAvatar ? (
+                        <Image source={{ uri: characterAvatar }} style={styles.avatarPreview} />
+                      ) : (
+                        <View style={styles.avatarPlaceholder}>
+                          <Ionicons name="camera" size={40} color="#666" />
+                          <Text style={styles.avatarPlaceholderText}>Tap to select avatar</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+
+                    {/* Name */}
+                    <Text style={styles.attributeLabel}>Name *</Text>
                     <TextInput
                       style={styles.roleplayInput}
-                      placeholder="Enter role/character name"
+                      placeholder="Enter character name"
                       placeholderTextColor="#666"
                       value={characterName}
                       onChangeText={setCharacterName}
                       maxLength={50}
                     />
+
+                    {/* Subtitle */}
+                    <Text style={styles.attributeLabel}>Subtitle</Text>
+                    <TextInput
+                      style={styles.roleplayInput}
+                      placeholder="e.g., The Brave Warrior, A Mysterious Stranger"
+                      placeholderTextColor="#666"
+                      value={characterSubtitle}
+                      onChangeText={setCharacterSubtitle}
+                      maxLength={100}
+                    />
+
+                    {/* Theme Color */}
+                    <Text style={styles.attributeLabel}>Theme Color</Text>
+                    <View style={styles.colorSelector}>
+                      {themeColors.map((color) => (
+                        <TouchableOpacity
+                          key={color}
+                          style={[
+                            styles.colorOption,
+                            { backgroundColor: color },
+                            characterThemeColor === color && styles.colorOptionSelected
+                          ]}
+                          onPress={() => setCharacterThemeColor(color)}
+                        >
+                          {characterThemeColor === color && (
+                            <Ionicons name="checkmark" size={24} color="#fff" />
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </View>
                   </View>
                 )}
 
-                {/* Page 2: Character Attributes */}
-                {roleplayPage === 2 && (
+                {/* Page 3: Gender, Language, Age, Height */}
+                {roleplayPage === 3 && (
                   <View style={styles.roleplayPageContent}>
                     <View style={styles.featureIconContainer}>
                       <Ionicons name="list" size={60} color="#FFD700" />
                     </View>
-                    <Text style={styles.roleplayPageTitle}>Character Attributes</Text>
-                    <Text style={styles.roleplayPageDesc}>Define your character's details</Text>
+                    <Text style={styles.roleplayPageTitle}>Personal Details</Text>
+                    <Text style={styles.roleplayPageDesc}>Add character's personal information</Text>
                     
+                    {/* Gender */}
                     <Text style={styles.attributeLabel}>Gender</Text>
                     <View style={styles.genderSelector}>
                       {['Male', 'Female', 'Non-binary', 'Other'].map((gender) => (
@@ -6133,6 +6375,29 @@ export default function GroupInfoScreen() {
                       ))}
                     </View>
 
+                    {/* Language */}
+                    <Text style={styles.attributeLabel}>Language</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.languageScroll}>
+                      <View style={styles.languageSelector}>
+                        {languages.map((lang) => (
+                          <TouchableOpacity
+                            key={lang}
+                            style={[
+                              styles.languageOption,
+                              characterLanguage === lang && styles.languageOptionSelected
+                            ]}
+                            onPress={() => setCharacterLanguage(lang)}
+                          >
+                            <Text style={[
+                              styles.languageOptionText,
+                              characterLanguage === lang && styles.languageOptionTextSelected
+                            ]}>{lang}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </ScrollView>
+
+                    {/* Age */}
                     <Text style={styles.attributeLabel}>Age</Text>
                     <TextInput
                       style={styles.roleplayInput}
@@ -6144,7 +6409,99 @@ export default function GroupInfoScreen() {
                       maxLength={3}
                     />
 
-                    <Text style={styles.attributeLabel}>Short Description</Text>
+                    {/* Height */}
+                    <Text style={styles.attributeLabel}>Height</Text>
+                    <TextInput
+                      style={styles.roleplayInput}
+                      placeholder="e.g., 5'10&quot;, 178 cm"
+                      placeholderTextColor="#666"
+                      value={characterHeight}
+                      onChangeText={setCharacterHeight}
+                      maxLength={20}
+                    />
+                  </View>
+                )}
+
+                {/* Page 4: Tags, Description, Greeting */}
+                {roleplayPage === 4 && (
+                  <View style={styles.roleplayPageContent}>
+                    <View style={styles.featureIconContainer}>
+                      <Ionicons name="pricetags" size={60} color="#FFD700" />
+                    </View>
+                    <Text style={styles.roleplayPageTitle}>Character Details</Text>
+                    <Text style={styles.roleplayPageDesc}>Add personality tags and description</Text>
+                    
+                    {/* Tags */}
+                    <Text style={styles.attributeLabel}>Tags</Text>
+                    <View style={styles.tagsContainer}>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tagsScroll}>
+                        <View style={styles.tagsRow}>
+                          {suggestedTags.map((tag) => (
+                            <TouchableOpacity
+                              key={tag}
+                              style={[
+                                styles.tagOption,
+                                characterTags.includes(tag) && styles.tagOptionSelected
+                              ]}
+                              onPress={() => {
+                                if (characterTags.includes(tag)) {
+                                  setCharacterTags(characterTags.filter(t => t !== tag));
+                                } else {
+                                  setCharacterTags([...characterTags, tag]);
+                                }
+                              }}
+                            >
+                              <Text style={[
+                                styles.tagOptionText,
+                                characterTags.includes(tag) && styles.tagOptionTextSelected
+                              ]}>{tag}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </ScrollView>
+                      
+                      {/* Selected Tags */}
+                      {characterTags.length > 0 && (
+                        <View style={styles.selectedTagsContainer}>
+                          {characterTags.map((tag) => (
+                            <View key={tag} style={styles.selectedTag}>
+                              <Text style={styles.selectedTagText}>{tag}</Text>
+                              <TouchableOpacity
+                                onPress={() => setCharacterTags(characterTags.filter(t => t !== tag))}
+                              >
+                                <Ionicons name="close-circle" size={18} color="#FFD700" />
+                              </TouchableOpacity>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+
+                      {/* Custom Tag Input */}
+                      <View style={styles.customTagInput}>
+                        <TextInput
+                          style={styles.customTagField}
+                          placeholder="Add custom tag"
+                          placeholderTextColor="#666"
+                          value={customTag}
+                          onChangeText={setCustomTag}
+                          maxLength={20}
+                        />
+                        <TouchableOpacity
+                          style={styles.addCustomTagButton}
+                          onPress={() => {
+                            if (customTag.trim() && !characterTags.includes(customTag.trim())) {
+                              setCharacterTags([...characterTags, customTag.trim()]);
+                              setCustomTag('');
+                            }
+                          }}
+                        >
+                          <Ionicons name="add-circle" size={24} color="#4CAF50" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    {/* Description */}
+                    <Text style={styles.attributeLabel}>Description</Text>
                     <TextInput
                       style={[styles.roleplayInput, styles.roleplayTextArea]}
                       placeholder="Brief description of your character's appearance, personality, background..."
@@ -6156,22 +6513,43 @@ export default function GroupInfoScreen() {
                       maxLength={500}
                       textAlignVertical="top"
                     />
+
+                    {/* Greeting Message */}
+                    <Text style={styles.attributeLabel}>Greeting Message</Text>
+                    <TextInput
+                      style={[styles.roleplayInput, styles.roleplayTextArea]}
+                      placeholder="How does this character greet others? e.g., 'Hello there, traveler!'"
+                      placeholderTextColor="#666"
+                      value={characterGreeting}
+                      onChangeText={setCharacterGreeting}
+                      multiline
+                      numberOfLines={4}
+                      maxLength={300}
+                      textAlignVertical="top"
+                    />
                   </View>
                 )}
 
-                {/* Page 3: Character Collection */}
-                {roleplayPage === 3 && (
+                {/* Page 5: Character Collection (Use Existing) */}
+                {roleplayPage === 5 && (
                   <View style={styles.roleplayPageContent}>
                     <View style={styles.characterCollectionHeader}>
                       <Text style={styles.collectionTitle}>Your Characters</Text>
                       <TouchableOpacity
                         style={styles.addCharacterButton}
                         onPress={() => {
-                          setRoleplayPage(1);
+                          setRoleplayPage(2);
+                          setCharacterAvatar('');
                           setCharacterName('');
+                          setCharacterSubtitle('');
+                          setCharacterThemeColor('#FFD700');
                           setCharacterGender('');
+                          setCharacterLanguage('English');
+                          setCharacterTags([]);
                           setCharacterAge('');
+                          setCharacterHeight('');
                           setCharacterDescription('');
+                          setCharacterGreeting('');
                           setEditingCharacterId(null);
                         }}
                       >
@@ -6207,41 +6585,98 @@ export default function GroupInfoScreen() {
                                   }
                                 }}
                               >
-                                <View style={styles.characterCardHeader}>
-                                  <Text style={styles.characterCardName}>{character.name}</Text>
-                                  {isSelected && (
-                                    <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
-                                  )}
-                                </View>
-                                <View style={styles.characterCardAttributes}>
-                                  {character.gender && (
-                                    <View style={styles.attributeBadge}>
-                                      <Text style={styles.attributeBadgeText}>{character.gender}</Text>
-                                    </View>
-                                  )}
-                                  {character.age && (
-                                    <View style={styles.attributeBadge}>
-                                      <Text style={styles.attributeBadgeText}>{character.age} yrs</Text>
-                                    </View>
-                                  )}
-                                </View>
-                                {character.description && (
-                                  <Text style={styles.characterCardDescription} numberOfLines={2}>
-                                    {character.description}
-                                  </Text>
+                                {/* Character Avatar */}
+                                {character.avatar && (
+                                  <Image 
+                                    source={{ uri: character.avatar }} 
+                                    style={styles.characterCardAvatar}
+                                  />
                                 )}
+                                
+                                <View style={styles.characterCardContent}>
+                                  {/* Character Header with Name and Selection */}
+                                  <View style={styles.characterCardHeader}>
+                                    <View style={styles.characterCardHeaderLeft}>
+                                      <Text style={[
+                                        styles.characterCardName,
+                                        character.themeColor && { color: character.themeColor }
+                                      ]}>{character.name}</Text>
+                                      {character.subtitle && (
+                                        <Text style={styles.characterCardSubtitle}>{character.subtitle}</Text>
+                                      )}
+                                    </View>
+                                    {isSelected && (
+                                      <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
+                                    )}
+                                  </View>
+
+                                  {/* Author Username */}
+                                  <Text style={styles.characterAuthor}>by @{currentUser?.username || 'Unknown'}</Text>
+
+                                  {/* Tags */}
+                                  {character.tags && character.tags.length > 0 && (
+                                    <View style={styles.characterCardTags}>
+                                      {character.tags.slice(0, 3).map((tag, index) => (
+                                        <View key={index} style={styles.characterCardTag}>
+                                          <Text style={styles.characterCardTagText}>{tag}</Text>
+                                        </View>
+                                      ))}
+                                      {character.tags.length > 3 && (
+                                        <Text style={styles.characterCardMoreTags}>+{character.tags.length - 3}</Text>
+                                      )}
+                                    </View>
+                                  )}
+
+                                  {/* Attributes (Gender, Age, Height, Language) */}
+                                  <View style={styles.characterCardAttributes}>
+                                    {character.gender && (
+                                      <View style={styles.attributeBadge}>
+                                        <Text style={styles.attributeBadgeText}>{character.gender}</Text>
+                                      </View>
+                                    )}
+                                    {character.age && (
+                                      <View style={styles.attributeBadge}>
+                                        <Text style={styles.attributeBadgeText}>{character.age} yrs</Text>
+                                      </View>
+                                    )}
+                                    {character.height && (
+                                      <View style={styles.attributeBadge}>
+                                        <Text style={styles.attributeBadgeText}>{character.height}</Text>
+                                      </View>
+                                    )}
+                                    {character.language && (
+                                      <View style={styles.attributeBadge}>
+                                        <Text style={styles.attributeBadgeText}>{character.language}</Text>
+                                      </View>
+                                    )}
+                                  </View>
+
+                                  {/* Description */}
+                                  {character.description && (
+                                    <Text style={styles.characterCardDescription} numberOfLines={2}>
+                                      {character.description}
+                                    </Text>
+                                  )}
+                                </View>
                               </TouchableOpacity>
 
                               <View style={styles.characterCardActions}>
                                 <TouchableOpacity
                                   style={styles.characterActionButton}
                                   onPress={() => {
+                                    setCharacterAvatar(character.avatar || '');
                                     setCharacterName(character.name);
+                                    setCharacterSubtitle(character.subtitle || '');
+                                    setCharacterThemeColor(character.themeColor || '#FFD700');
                                     setCharacterGender(character.gender);
+                                    setCharacterLanguage(character.language || 'English');
+                                    setCharacterTags(character.tags || []);
                                     setCharacterAge(character.age);
+                                    setCharacterHeight(character.height || '');
                                     setCharacterDescription(character.description);
+                                    setCharacterGreeting(character.greeting || '');
                                     setEditingCharacterId(character.id);
-                                    setRoleplayPage(1);
+                                    setRoleplayPage(2);
                                   }}
                                 >
                                   <Ionicons name="create-outline" size={20} color="#4CAF50" />
@@ -6284,15 +6719,16 @@ export default function GroupInfoScreen() {
               </ScrollView>
 
               <View style={styles.miniScreenActions}>
-                {roleplayPage === 1 && (
+                {/* Page 2: Next button to go to page 3 */}
+                {roleplayPage === 2 && (
                   <TouchableOpacity
                     style={[styles.miniScreenButton, styles.nextButton, !characterName.trim() && styles.buttonDisabled]}
                     onPress={() => {
                       if (!characterName.trim()) {
-                        Alert.alert('Required', 'Please enter a role name');
+                        Alert.alert('Required', 'Please enter a character name');
                         return;
                       }
-                      setRoleplayPage(2);
+                      setRoleplayPage(3);
                     }}
                     disabled={!characterName.trim()}
                   >
@@ -6300,7 +6736,18 @@ export default function GroupInfoScreen() {
                   </TouchableOpacity>
                 )}
 
-                {roleplayPage === 2 && (
+                {/* Page 3: Next button to go to page 4 */}
+                {roleplayPage === 3 && (
+                  <TouchableOpacity
+                    style={[styles.miniScreenButton, styles.nextButton]}
+                    onPress={() => setRoleplayPage(4)}
+                  >
+                    <Text style={styles.miniScreenButtonText}>Next</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Page 4: Save button to save character and go to collection (page 5) */}
+                {roleplayPage === 4 && (
                   <TouchableOpacity
                     style={[styles.miniScreenButton, styles.nextButton]}
                     onPress={() => saveCharacterToCollection()}
@@ -6311,7 +6758,8 @@ export default function GroupInfoScreen() {
                   </TouchableOpacity>
                 )}
 
-                {roleplayPage === 3 && selectedCharactersForSession.length > 0 && (
+                {/* Page 5: Start roleplay button when characters selected */}
+                {roleplayPage === 5 && selectedCharactersForSession.length > 0 && (
                   <TouchableOpacity
                     style={[styles.miniScreenButton, styles.startButton]}
                     onPress={() => {
@@ -7164,15 +7612,89 @@ const styles = StyleSheet.create({
     marginVertical: 10,
   },
   roleplayCharactersLabel: {
-    color: '#999',
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 6,
+    color: '#FFD700',
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 10,
   },
   roleplayCharactersList: {
+    gap: 12,
+  },
+  roleplayCharacterCard: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(26, 26, 26, 0.8)',
+    borderRadius: 12,
+    padding: 12,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 215, 0, 0.2)',
+  },
+  roleplayCharacterAvatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#2a2a2a',
+  },
+  roleplayCharacterAvatarPlaceholder: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#2a2a2a',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  roleplayCharacterInfo: {
+    flex: 1,
+  },
+  roleplayCharacterName: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  roleplayCharacterSubtitle: {
+    color: '#999',
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginBottom: 4,
+  },
+  roleplayCharacterAuthor: {
+    color: '#666',
+    fontSize: 11,
+    marginBottom: 6,
+  },
+  roleplayCharacterTags: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: 4,
+    marginBottom: 6,
+  },
+  roleplayCharacterTag: {
+    backgroundColor: '#8B2EF0',
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 8,
+  },
+  roleplayCharacterTagText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  roleplayCharacterMoreTags: {
+    color: '#8B2EF0',
+    fontSize: 10,
+    fontWeight: '600',
+    alignSelf: 'center',
+  },
+  roleplayCharacterAttributes: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+  },
+  roleplayCharacterAttribute: {
+    color: '#FFD700',
+    fontSize: 11,
+    fontWeight: '600',
   },
   characterBadge: {
     backgroundColor: 'rgba(255, 215, 0, 0.15)',
@@ -8662,6 +9184,43 @@ const styles = StyleSheet.create({
     marginBottom: 30,
     paddingHorizontal: 20,
   },
+  
+  // Choice Buttons (Page 1)
+  roleplayChoiceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 15,
+    padding: 16,
+    marginBottom: 15,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  roleplayChoiceIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#2a2a2a',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 15,
+  },
+  roleplayChoiceContent: {
+    flex: 1,
+  },
+  roleplayChoiceTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  roleplayChoiceDesc: {
+    color: '#999',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  
   roleplayInput: {
     width: '100%',
     backgroundColor: '#2a2a2a',
@@ -8714,6 +9273,160 @@ const styles = StyleSheet.create({
   genderOptionTextSelected: {
     color: '#000',
     fontWeight: '600',
+  },
+
+  // Avatar Selector
+  avatarSelector: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#2a2a2a',
+    borderWidth: 2,
+    borderColor: '#FFD700',
+    overflow: 'hidden',
+    marginBottom: 20,
+    alignSelf: 'center',
+  },
+  avatarPreview: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarPlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarPlaceholderText: {
+    color: '#666',
+    fontSize: 12,
+    marginTop: 8,
+  },
+
+  // Color Selector
+  colorSelector: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    width: '100%',
+    marginBottom: 10,
+    gap: 12,
+  },
+  colorOption: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: 'transparent',
+  },
+  colorOptionSelected: {
+    borderColor: '#fff',
+  },
+
+  // Language Selector
+  languageScroll: {
+    width: '100%',
+    marginBottom: 10,
+  },
+  languageSelector: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingRight: 20,
+  },
+  languageOption: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    backgroundColor: '#2a2a2a',
+    borderWidth: 1,
+    borderColor: '#444',
+  },
+  languageOptionSelected: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#4CAF50',
+  },
+  languageOptionText: {
+    color: '#999',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  languageOptionTextSelected: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+
+  // Tags Container
+  tagsContainer: {
+    width: '100%',
+    marginBottom: 20,
+  },
+  tagsScroll: {
+    width: '100%',
+    marginBottom: 15,
+  },
+  tagsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingRight: 20,
+  },
+  tagOption: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 18,
+    backgroundColor: '#2a2a2a',
+    borderWidth: 1,
+    borderColor: '#444',
+  },
+  tagOptionSelected: {
+    backgroundColor: '#8B2EF0',
+    borderColor: '#8B2EF0',
+  },
+  tagOptionText: {
+    color: '#999',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  tagOptionTextSelected: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  selectedTagsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 15,
+  },
+  selectedTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#8B2EF0',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    gap: 6,
+  },
+  selectedTagText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  customTagInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  customTagField: {
+    flex: 1,
+    backgroundColor: '#2a2a2a',
+    borderRadius: 10,
+    padding: 12,
+    color: '#fff',
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: '#444',
+  },
+  addCustomTagButton: {
+    padding: 8,
   },
 
   // Character Collection
@@ -8771,27 +9484,75 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   characterCardMain: {
+    flexDirection: 'row',
     padding: 15,
+    gap: 12,
   },
   characterCardSelected: {
     backgroundColor: '#1a2a1a',
     borderColor: '#4CAF50',
   },
+  characterCardAvatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#2a2a2a',
+  },
+  characterCardContent: {
+    flex: 1,
+  },
   characterCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
+    alignItems: 'flex-start',
+    marginBottom: 6,
+  },
+  characterCardHeaderLeft: {
+    flex: 1,
   },
   characterCardName: {
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
-    flex: 1,
+  },
+  characterCardSubtitle: {
+    color: '#999',
+    fontSize: 13,
+    fontStyle: 'italic',
+    marginTop: 2,
+  },
+  characterAuthor: {
+    color: '#666',
+    fontSize: 12,
+    marginBottom: 8,
+  },
+  characterCardTags: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 8,
+  },
+  characterCardTag: {
+    backgroundColor: '#8B2EF0',
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+  },
+  characterCardTagText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  characterCardMoreTags: {
+    color: '#8B2EF0',
+    fontSize: 11,
+    fontWeight: '600',
+    alignSelf: 'center',
   },
   characterCardAttributes: {
     flexDirection: 'row',
-    gap: 8,
+    flexWrap: 'wrap',
+    gap: 6,
     marginBottom: 8,
   },
   attributeBadge: {

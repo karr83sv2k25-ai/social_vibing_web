@@ -12,15 +12,18 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { Video } from 'expo-av';
 import { getAuth } from 'firebase/auth';
 import { compressPostImage } from './utils/imageCompression';
 import { collection, addDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
 import { db } from './firebaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { uploadImageToHostinger, uploadVideoToHostinger } from './hostingerConfig';
 
 export default function CreatePostScreen({ navigation }) {
   const [postText, setPostText] = useState('');
   const [selectedImages, setSelectedImages] = useState([]);
+  const [selectedVideos, setSelectedVideos] = useState([]);
   const [isPosting, setIsPosting] = useState(false);
   const auth = getAuth();
   const currentUser = auth.currentUser;
@@ -53,11 +56,36 @@ export default function CreatePostScreen({ navigation }) {
     setSelectedImages(selectedImages.filter((_, i) => i !== index));
   };
 
+  const pickVideos = async () => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    
+    if (permissionResult.granted === false) {
+      Alert.alert('Permission Required', 'Please allow access to your photo library');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+      allowsMultipleSelection: true,
+      quality: 1.0,
+    });
+
+    if (!result.canceled && result.assets) {
+      const videoUris = result.assets.map(asset => asset.uri);
+      setSelectedVideos([...selectedVideos, ...videoUris]);
+    }
+  };
+
+  const removeVideo = (index) => {
+    setSelectedVideos(selectedVideos.filter((_, i) => i !== index));
+  };
+
   const saveDraft = async () => {
     try {
       const draft = {
         text: postText,
         images: selectedImages,
+        videos: selectedVideos,
         timestamp: new Date().toISOString(),
         type: 'post',
       };
@@ -76,7 +104,7 @@ export default function CreatePostScreen({ navigation }) {
 
   const publishPost = async () => {
     const trimmedText = postText.trim();
-    if (!trimmedText && selectedImages.length === 0) {
+    if (!trimmedText && selectedImages.length === 0 && selectedVideos.length === 0) {
       Alert.alert('Error', 'Please add some content to your post');
       return;
     }
@@ -104,13 +132,48 @@ export default function CreatePostScreen({ navigation }) {
         console.log('⚠️  Could not load extended profile for post author:', profileError.message);
       }
 
+      // Upload images to Hostinger
+      console.log('📤 Uploading media to Hostinger...');
+      const uploadedImageUrls = [];
+      const uploadedVideoUrls = [];
+      
+      for (const imageUri of selectedImages) {
+        try {
+          const uploadedUrl = await uploadImageToHostinger(imageUri, 'posts');
+          uploadedImageUrls.push(uploadedUrl);
+          console.log('✅ Image uploaded:', uploadedUrl);
+        } catch (uploadError) {
+          console.error('❌ Error uploading image:', uploadError);
+          // Continue with other images even if one fails
+        }
+      }
+
+      for (const videoUri of selectedVideos) {
+        try {
+          const uploadedUrl = await uploadVideoToHostinger(videoUri, 'posts');
+          uploadedVideoUrls.push(uploadedUrl);
+          console.log('✅ Video uploaded:', uploadedUrl);
+        } catch (uploadError) {
+          console.error('❌ Error uploading video:', uploadError);
+          // Continue with other videos even if one fails
+        }
+      }
+
+      if ((selectedImages.length > 0 && uploadedImageUrls.length === 0) || 
+          (selectedVideos.length > 0 && uploadedVideoUrls.length === 0)) {
+        Alert.alert('Upload Error', 'Failed to upload media. Please try again.');
+        setIsPosting(false);
+        return;
+      }
+
       const postData = {
         authorId: currentUser.uid,
         authorEmail: currentUser.email,
         authorName,
         authorImage,
         text: trimmedText,
-        images: selectedImages,
+        images: uploadedImageUrls, // Use Hostinger URLs instead of local URIs
+        videos: uploadedVideoUrls, // Video URLs from Hostinger
         likes: 0,
         likedBy: [],
         comments: 0,
@@ -175,11 +238,44 @@ export default function CreatePostScreen({ navigation }) {
           </View>
         )}
 
-        {/* Add Media Button */}
-        <TouchableOpacity style={styles.addMediaButton} onPress={pickImages}>
-          <Ionicons name="image" size={24} color="#08FFE2" />
-          <Text style={styles.addMediaText}>Add Photos</Text>
-        </TouchableOpacity>
+        {/* Video Preview */}
+        {selectedVideos.length > 0 && (
+          <View style={styles.imagesContainer}>
+            {selectedVideos.map((uri, index) => (
+              <View key={index} style={styles.imageWrapper}>
+                <Video
+                  source={{ uri }}
+                  style={styles.imagePreview}
+                  useNativeControls
+                  resizeMode="contain"
+                  isLooping
+                />
+                <TouchableOpacity
+                  style={styles.removeImageButton}
+                  onPress={() => removeVideo(index)}
+                >
+                  <Ionicons name="close-circle" size={24} color="#fff" />
+                </TouchableOpacity>
+                <View style={styles.videoIndicator}>
+                  <Ionicons name="play-circle" size={40} color="rgba(255,255,255,0.8)" />
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Add Media Buttons */}
+        <View style={styles.mediaButtonsContainer}>
+          <TouchableOpacity style={styles.addMediaButton} onPress={pickImages}>
+            <Ionicons name="image" size={24} color="#08FFE2" />
+            <Text style={styles.addMediaText}>Add Photos</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.addMediaButton} onPress={pickVideos}>
+            <Ionicons name="videocam" size={24} color="#ff4b6e" />
+            <Text style={styles.addMediaText}>Add Videos</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
 
       {/* Footer - Publish Button */}
@@ -259,13 +355,26 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)',
     borderRadius: 12,
   },
+  videoIndicator: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -20 }, { translateY: -20 }],
+    pointerEvents: 'none',
+  },
+  mediaButtonsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+  },
   addMediaButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     padding: 16,
     backgroundColor: '#111',
     borderRadius: 12,
-    marginTop: 16,
   },
   addMediaText: {
     marginLeft: 12,

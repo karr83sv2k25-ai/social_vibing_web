@@ -310,6 +310,38 @@ export default function RoleplayScreen() {
 
     const loadCharacter = async () => {
       try {
+        // First, check if user has characters from the session (from character collection)
+        const sessionRef = doc(db, 'roleplay_sessions', communityId, 'sessions', sessionId);
+        const sessionSnap = await getDoc(sessionRef);
+        
+        if (sessionSnap.exists()) {
+          const sessionData = sessionSnap.data();
+          
+          // Find user's participant data which should have their selected characters
+          const userParticipant = sessionData.participants?.find(p => p.userId === currentUser.id);
+          
+          if (userParticipant && userParticipant.characters && userParticipant.characters.length > 0) {
+            // User has selected characters from character collection
+            // Use the first character as the active character
+            const characterIds = userParticipant.characters;
+            const sessionCharacters = sessionData.characters || [];
+            const userCharacter = sessionCharacters.find(char => 
+              characterIds.includes(char.id) && char.ownerId === currentUser.id
+            );
+            
+            if (userCharacter) {
+              setCharacterName(userCharacter.name || currentUser.name);
+              setCharacterDescription(userCharacter.description || '');
+              setCharacterImage(userCharacter.avatar || currentUser.profileImage);
+              setFrameColor(userCharacter.themeColor || '#A855F7');
+              setTextColor('#FFFFFF');
+              setMyCharacterId(userCharacter.id);
+              return; // Exit early, we found the character
+            }
+          }
+        }
+        
+        // Fallback: Check roleplay_characters collection
         const charsRef = collection(db, 'roleplay_characters');
         const q = query(
           charsRef,
@@ -331,7 +363,6 @@ export default function RoleplayScreen() {
           setTextColor(charData.textColor || '#1F2937');
         } else {
           // No character found - use default character settings
-          // User can customize later by clicking the Character button
           setCharacterName(currentUser.name || 'User');
           setCharacterImage(currentUser.profileImage || null);
           setFrameColor('#A855F7');
@@ -351,6 +382,38 @@ export default function RoleplayScreen() {
 
     const loadParticipantCharacters = async () => {
       try {
+        // First, get characters from the session data
+        const sessionRef = doc(db, 'roleplay_sessions', communityId, 'sessions', sessionId);
+        const sessionSnap = await getDoc(sessionRef);
+        
+        const chars = {};
+        
+        if (sessionSnap.exists()) {
+          const sessionData = sessionSnap.data();
+          const sessionCharacters = sessionData.characters || [];
+          
+          // Map session characters to participants
+          participants.forEach((participant) => {
+            // Find character for this participant from session.characters array
+            const participantCharacter = sessionCharacters.find(char => 
+              char.ownerId === participant.userId
+            );
+            
+            if (participantCharacter) {
+              chars[participant.userId] = {
+                id: participantCharacter.id,
+                name: participantCharacter.name,
+                imageUrl: participantCharacter.avatar,
+                frameColor: participantCharacter.themeColor,
+                textColor: '#FFFFFF',
+                description: participantCharacter.description,
+                ...participantCharacter
+              };
+            }
+          });
+        }
+        
+        // Also check roleplay_characters collection for any custom characters
         const charsRef = collection(db, 'roleplay_characters');
         const q = query(
           charsRef,
@@ -358,14 +421,16 @@ export default function RoleplayScreen() {
         );
         
         const snapshot = await getDocs(q);
-        const chars = {};
         
         snapshot.forEach((doc) => {
           const data = doc.data();
-          chars[data.userId] = {
-            id: doc.id,
-            ...data
-          };
+          // Only add if not already added from session data
+          if (!chars[data.userId]) {
+            chars[data.userId] = {
+              id: doc.id,
+              ...data
+            };
+          }
         });
         
         setParticipantCharacters(chars);
@@ -743,8 +808,7 @@ export default function RoleplayScreen() {
           <View style={styles.circularParticipantsContainer}>
             {participants.map((participant, index) => {
               const character = participantCharacters[participant.userId];
-              // Prioritize profile image from participant data, then character image
-              const displayImage = participant.profileImage || character?.imageUrl;
+              const characterImage = character?.imageUrl;
               const displayName = character?.name || participant.userName;
               const charFrameColor = character?.frameColor || '#FFD700';
               
@@ -772,14 +836,14 @@ export default function RoleplayScreen() {
                     <MaterialCommunityIcons name="crown" size={24} color="#FFD700" />
                   </View>
                   
-                  {/* Participant Avatar */}
+                  {/* Character Avatar */}
                   <View style={[
                     styles.circularAvatar,
                     { borderColor: charFrameColor }
                   ]}>
-                    {displayImage ? (
+                    {characterImage ? (
                       <Image
-                        source={{ uri: displayImage }}
+                        source={{ uri: characterImage }}
                         style={styles.circularAvatarImage}
                         defaultSource={require('./assets/a1.png')}
                       />
@@ -791,7 +855,7 @@ export default function RoleplayScreen() {
                     )}
                   </View>
                   
-                  {/* Participant Name */}
+                  {/* Character/Participant Name */}
                   <Text style={styles.circularParticipantName} numberOfLines={1}>
                     {displayName}
                   </Text>
@@ -823,21 +887,7 @@ export default function RoleplayScreen() {
 
         {/* Controls */}
         <View style={styles.controlsContainer}>
-          <TouchableOpacity
-            style={styles.customizeButton}
-            onPress={() => {
-              if (existingCharacters.length > 0) {
-                setShowCharacterSelector(true);
-              } else {
-                setShowCharacterCustomization(true);
-              }
-            }}
-          >
-            <MaterialCommunityIcons name="account-edit" size={24} color="#fff" />
-            <Text style={styles.controlButtonText}>
-              {myCharacterId ? 'Edit' : 'Customize'}
-            </Text>
-          </TouchableOpacity>
+  
 
           <TouchableOpacity
             style={styles.chatButton}
@@ -1451,11 +1501,28 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     padding: 3,
     backgroundColor: 'rgba(26, 10, 46, 0.8)',
+    position: 'relative',
   },
   circularAvatarImage: {
     width: '100%',
     height: '100%',
     borderRadius: 32,
+  },
+  userProfileBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#1a0a2e',
+    overflow: 'hidden',
+    backgroundColor: '#2a2a2a',
+  },
+  userProfileBadgeImage: {
+    width: '100%',
+    height: '100%',
   },
   circularParticipantName: {
     color: '#fff',

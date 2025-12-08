@@ -325,7 +325,8 @@ service cloud.firestore {
       allow create: if isSignedIn() && 
                       request.resource.data.fromUserId == request.auth.uid;
       allow update: if isSignedIn() && 
-                      resource.data.toUserId == request.auth.uid;
+                      (resource.data.toUserId == request.auth.uid || 
+                       resource.data.fromUserId == request.auth.uid);
       allow delete: if isSignedIn() && 
                       (resource.data.fromUserId == request.auth.uid || 
                        resource.data.toUserId == request.auth.uid);
@@ -334,8 +335,9 @@ service cloud.firestore {
     // Friends collection (user's friends list)
     match /users/{userId}/friends/{friendId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.auth.uid == userId;
-      allow delete: if isSignedIn() && request.auth.uid == userId;
+      allow write: if isSignedIn() && 
+                     (request.auth.uid == userId || 
+                      request.auth.uid == friendId);
     }
     
     // Blocked users collection

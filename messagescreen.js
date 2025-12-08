@@ -754,9 +754,8 @@ export default function MessagesScreen({ navigation }) {
       // Groups tab: show only groups
       return p.isGroup === true;
     } else if (activeTab === 'private') {
-      // Private tab: show both private chats AND groups
-      // This ensures groups are always visible
-      return true;
+      // Private tab: show ONLY private 1-on-1 chats (no groups)
+      return p.isGroup !== true;
     } else if (activeTab === 'invites') {
       // Invites tab: No conversations should be shown here
       // This tab is meant for friend requests/group invites, not existing conversations

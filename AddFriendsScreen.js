@@ -35,11 +35,19 @@ export default function AddFriendsScreen({ navigation }) {
   const [friendStatuses, setFriendStatuses] = useState({});
   const currentUser = auth.currentUser;
 
-  // Load friend requests and suggestions on mount
+  // Load friend requests, suggestions and all users on mount
   useEffect(() => {
     loadFriendRequests();
     loadSuggestions();
+    loadAllUsers(); // Load all unfriend users initially
   }, []);
+
+  // Load users when switching to search tab
+  useEffect(() => {
+    if (activeTab === 'search' && searchResults.length === 0 && !searchQuery) {
+      loadAllUsers();
+    }
+  }, [activeTab]);
 
   const loadFriendRequests = async () => {
     try {
@@ -157,9 +165,96 @@ export default function AddFriendsScreen({ navigation }) {
     }
   };
 
+  const loadAllUsers = async () => {
+    setLoading(true);
+    try {
+      console.log('🔍 Loading all users...');
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, limit(250)); // Load first 250 users
+      const snapshot = await getDocs(q);
+      console.log('📦 Fetched users:', snapshot.docs.length);
+      
+      const myFriends = await getFriends();
+      console.log('👥 My friends:', myFriends.length);
+      const results = [];
+      
+      // First pass: Build user list without status (faster)
+      for (const doc of snapshot.docs) {
+        if (doc.id === currentUser.uid) continue; // Skip current user only
+        
+        const userData = doc.data();
+        
+        // Build display name
+        let userDisplayName = 'User';
+        if (userData.username && userData.username.trim()) {
+          userDisplayName = userData.username;
+        } else if (userData.firstName || userData.lastName) {
+          const first = userData.firstName || '';
+          const last = userData.lastName || '';
+          userDisplayName = `${first} ${last}`.trim();
+        } else if (userData.displayName && userData.displayName.trim()) {
+          userDisplayName = userData.displayName;
+        } else if (userData.email) {
+          userDisplayName = userData.email.split('@')[0];
+        }
+        
+        results.push({
+          id: doc.id,
+          name: userDisplayName,
+          email: userData.email || '',
+          avatar: userData.profilePicture || userData.profileImage || userData.avatar || userData.photoURL || null,
+          status: 'none', // Default status
+          requestId: null,
+        });
+      }
+      
+      console.log('✅ Initial results ready:', results.length);
+      setSearchResults(results);
+      setLoading(false);
+      
+      // Second pass: Update statuses in background - ONLY if this was called from initial load
+      // Don't run background updates if search query exists
+      if (!searchQuery.trim()) {
+        const initialResults = [...results];
+        for (let i = 0; i < initialResults.length; i++) {
+          try {
+            // Double-check search query before each status fetch
+            if (searchQuery.trim()) {
+              console.log('⏹️ Search detected, stopping background updates');
+              break;
+            }
+            
+            const status = await getFriendshipStatus(initialResults[i].id);
+            initialResults[i].status = typeof status === 'object' ? status.status : status;
+            initialResults[i].requestId = typeof status === 'object' ? status.requestId : null;
+            
+            // Update state periodically (every 5 users)
+            if ((i + 1) % 5 === 0 || i === initialResults.length - 1) {
+              // Final check before updating
+              if (!searchQuery.trim()) {
+                setSearchResults([...initialResults]);
+              } else {
+                console.log('⏹️ Search detected during update, stopping');
+                break;
+              }
+            }
+          } catch (err) {
+            console.log('Error fetching status for user:', initialResults[i].id, err);
+          }
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ Error loading all users:', error);
+      setLoading(false);
+    }
+  };
+
   const searchUsers = async () => {
     if (!searchQuery.trim()) {
-      setSearchResults([]);
+      // If search is empty, reload all users
+      setSearchResults([]); // Clear results first
+      loadAllUsers();
       return;
     }
 
@@ -173,20 +268,19 @@ export default function AddFriendsScreen({ navigation }) {
       // Use indexed queries when possible for better performance
       let snapshot;
       if (searchQuery.includes('@')) {
-        // Email search - use where clause
-        const q = query(usersRef, where('email', '>=', searchLower), where('email', '<=', searchLower + '\uf8ff'), limit(20));
+        // Email search - use where clause for better performance
+        const q = query(usersRef, where('email', '>=', searchLower), where('email', '<=', searchLower + '\uf8ff'), limit(50));
         snapshot = await getDocs(q);
       } else {
-        // General search - still need to fetch but limit results
-        const q = query(usersRef, limit(100)); // OPTIMIZATION: Only fetch first 100 users
+        // General search - fetch more users to search through
+        const q = query(usersRef, limit(250)); // Fetch 250 users to search through
         snapshot = await getDocs(q);
       }
       
       const results = [];
-      const myFriends = await getFriends();
       
       for (const doc of snapshot.docs) {
-        if (doc.id === currentUser.uid) continue; // Skip current user
+        if (doc.id === currentUser.uid) continue; // Skip current user only
         
         const userData = doc.data();
         
@@ -237,8 +331,8 @@ export default function AddFriendsScreen({ navigation }) {
             requestId: typeof status === 'object' ? status.requestId : null,
           });
           
-          // OPTIMIZATION: Stop after finding 20 matches
-          if (results.length >= 20) break;
+          // OPTIMIZATION: Stop after finding 50 matches
+          if (results.length >= 50) break;
         }
       }
 
@@ -487,7 +581,10 @@ export default function AddFriendsScreen({ navigation }) {
               returnKeyType="search"
             />
             {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <TouchableOpacity onPress={() => {
+                setSearchQuery('');
+                loadAllUsers(); // Reload all users when clearing search
+              }}>
                 <Ionicons name="close-circle" size={20} color="#666" />
               </TouchableOpacity>
             )}

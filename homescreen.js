@@ -17,7 +17,7 @@ import {
   Share,
 } from 'react-native';
 import { Ionicons, Entypo } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
+import { Video } from 'expo-av';
 import { getAuth } from 'firebase/auth';
 import {
   getFirestore,
@@ -171,6 +171,8 @@ const Post = ({
   onPollVote,
   pollVoteBusy,
   onStartQuiz,
+  onImagePress,
+  onProfilePress,
   isLiked, 
   isFollowing, 
   likeBusy, 
@@ -219,7 +221,11 @@ const Post = ({
     <View style={styles.postContainer}>
       {/* Author Info */}
       <View style={styles.postHeader}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <TouchableOpacity 
+          style={{ flexDirection: 'row', alignItems: 'center' }}
+          onPress={() => onProfilePress && post.authorId && onProfilePress(post.authorId)}
+          activeOpacity={0.7}
+        >
           <Image
             source={post.authorImage ? { uri: post.authorImage } : require('./assets/a1.png')}
             style={styles.postProfileImage}
@@ -233,7 +239,7 @@ const Post = ({
               }
             </Text>
           </View>
-        </View>
+        </TouchableOpacity>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           {canDelete && (
             <TouchableOpacity
@@ -273,14 +279,19 @@ const Post = ({
       {post.type === 'image' && (
         <>
           {post.imageUri ? (
-            <Image
-              source={{ uri: post.imageUri }}
-              style={styles.postImageFull}
-              resizeMode="cover"
-              onError={(error) => {
-                console.log('Image load error for post:', post.id, error.nativeEvent.error);
-              }}
-            />
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={() => onImagePress && onImagePress(post.imageUri, [post.imageUri], 0)}
+            >
+              <Image
+                source={{ uri: post.imageUri }}
+                style={styles.postImageFull}
+                resizeMode="cover"
+                onError={(error) => {
+                  console.log('Image load error for post:', post.id, error.nativeEvent.error);
+                }}
+              />
+            </TouchableOpacity>
           ) : (
             <View style={styles.noImagePlaceholder}>
               <Ionicons name="image-outline" size={48} color="#666" />
@@ -298,7 +309,11 @@ const Post = ({
         <>
           {post.text ? <Text style={styles.postText}>{post.text}</Text> : null}
           {Array.isArray(post.images) && post.images.length > 0 && (
-            <View style={styles.globalPostImageWrapper}>
+            <TouchableOpacity 
+              style={styles.globalPostImageWrapper}
+              activeOpacity={0.9}
+              onPress={() => onImagePress && onImagePress(post.images[0], post.images, 0)}
+            >
               {imageLoadErrors[`${post.id}-0`] ? (
                 <View style={[styles.postImageFull, styles.imageFallback]}>
                   <Ionicons name="image-outline" size={48} color="#666" />
@@ -318,6 +333,22 @@ const Post = ({
               {post.images.length > 1 && (
                 <View style={styles.multipleImagesBadge}>
                   <Text style={styles.multipleImagesText}>+{post.images.length - 1}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          )}
+          {Array.isArray(post.videos) && post.videos.length > 0 && (
+            <View style={styles.globalPostImageWrapper}>
+              <Video
+                source={{ uri: post.videos[0] }}
+                style={styles.postImageFull}
+                useNativeControls
+                resizeMode="contain"
+                isLooping
+              />
+              {post.videos.length > 1 && (
+                <View style={styles.multipleImagesBadge}>
+                  <Text style={styles.multipleImagesText}>+{post.videos.length - 1}</Text>
                 </View>
               )}
             </View>
@@ -506,6 +537,10 @@ const HomeScreen = React.memo(({ navigation }) => {
   const [quizSubmitting, setQuizSubmitting] = useState(false);
   const [quizResult, setQuizResult] = useState(null);
   const [imageLoadErrors, setImageLoadErrors] = useState({});
+  const [imageViewerVisible, setImageViewerVisible] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [allImagesInPost, setAllImagesInPost] = useState([]);
 
   // Fetch current user
   useEffect(() => {
@@ -591,35 +626,55 @@ const HomeScreen = React.memo(({ navigation }) => {
   const fetchAllPosts = useCallback(async () => {
     setLoading(true);
     const combinedPosts = [];
-    try {
-      // Global posts
+    const authorCache = {}; // Cache authors to avoid duplicate fetches
+    
+    // Helper function to get author data with caching
+    const getAuthorData = async (authorId, existingName, existingImage, existingUsername) => {
+      if (!authorId || (existingName && existingImage)) {
+        return { authorName: existingName || 'User', authorImage: existingImage || null, username: existingUsername || '' };
+      }
+      
+      if (authorCache[authorId]) {
+        return authorCache[authorId];
+      }
+      
       try {
-        const globalPostsQuery = query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(50));
+        const userRef = doc(db, 'users', authorId);
+        const userSnap = await getDoc(userRef);
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+          const fullName = [userData.firstName, userData.lastName].filter(Boolean).join(' ').trim();
+          const result = {
+            authorName: fullName || userData.displayName || userData.name || userData.username || 'User',
+            authorImage: userData.profileImage || userData.avatar || userData.profile_image || userData.photoURL || null,
+            username: userData.username || '',
+          };
+          authorCache[authorId] = result;
+          return result;
+        }
+      } catch (error) {
+        console.log('Error fetching author:', error);
+      }
+      
+      return { authorName: existingName || 'User', authorImage: existingImage || null, username: existingUsername || '' };
+    };
+    
+    try {
+      // Global posts - REDUCED LIMIT
+      try {
+        const globalPostsQuery = query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(15));
         const globalPostsSnapshot = await getDocs(globalPostsQuery);
 
         for (const postDoc of globalPostsSnapshot.docs) {
           const postData = postDoc.data();
           const authorId = postData.authorId || postData.userId || null;
-
-          let authorName = postData.authorName || 'User';
-          let authorImage = postData.authorImage || null;
-          let username = postData.authorUsername || postData.username || '';
-
-          if (authorId && (!postData.authorName || !postData.authorImage)) {
-            try {
-              const userRef = doc(db, 'users', authorId);
-              const userSnap = await getDoc(userRef);
-              if (userSnap.exists()) {
-                const userData = userSnap.data();
-                const fullName = [userData.firstName, userData.lastName].filter(Boolean).join(' ').trim();
-                authorName = fullName || userData.displayName || userData.name || userData.username || authorName;
-                authorImage = userData.profileImage || userData.avatar || userData.profile_image || userData.photoURL || authorImage;
-                username = userData.username || username;
-              }
-            } catch (authorError) {
-              console.log('Error fetching global post author:', authorError);
-            }
-          }
+          
+          const { authorName, authorImage, username } = await getAuthorData(
+            authorId,
+            postData.authorName,
+            postData.authorImage,
+            postData.authorUsername || postData.username
+          );
 
           const images = Array.isArray(postData.images) ? postData.images : [];
 
@@ -654,34 +709,21 @@ const HomeScreen = React.memo(({ navigation }) => {
         console.log('Error fetching global posts:', globalError);
       }
 
-      // Global polls
+      // Global polls - REDUCED LIMIT
       try {
-        const pollsQuery = query(collection(db, 'polls'), orderBy('createdAt', 'desc'), limit(50));
+        const pollsQuery = query(collection(db, 'polls'), orderBy('createdAt', 'desc'), limit(10));
         const pollsSnapshot = await getDocs(pollsQuery);
 
         for (const pollDoc of pollsSnapshot.docs) {
           const pollData = pollDoc.data();
           const authorId = pollData.authorId || pollData.userId || null;
-
-          let authorName = pollData.authorName || 'User';
-          let authorImage = pollData.authorImage || null;
-          let username = pollData.authorUsername || pollData.username || '';
-
-          if (authorId && (!pollData.authorName || !pollData.authorImage)) {
-            try {
-              const userRef = doc(db, 'users', authorId);
-              const userSnap = await getDoc(userRef);
-              if (userSnap.exists()) {
-                const userData = userSnap.data();
-                const fullName = [userData.firstName, userData.lastName].filter(Boolean).join(' ').trim();
-                authorName = fullName || userData.displayName || userData.name || userData.username || authorName;
-                authorImage = userData.profileImage || userData.avatar || userData.profile_image || userData.photoURL || authorImage;
-                username = userData.username || username;
-              }
-            } catch (authorError) {
-              console.log('Error fetching poll author:', authorError);
-            }
-          }
+          
+          const { authorName, authorImage, username } = await getAuthorData(
+            authorId,
+            pollData.authorName,
+            pollData.authorImage,
+            pollData.authorUsername || pollData.username
+          );
 
           const commentCount = typeof pollData.comments === 'number' ? pollData.comments : 0;
 
@@ -707,34 +749,21 @@ const HomeScreen = React.memo(({ navigation }) => {
         console.log('Error fetching polls:', pollError);
       }
 
-      // Global quizzes
+      // Global quizzes - REDUCED LIMIT
       try {
-        const quizzesQuery = query(collection(db, 'quizzes'), orderBy('createdAt', 'desc'), limit(50));
+        const quizzesQuery = query(collection(db, 'quizzes'), orderBy('createdAt', 'desc'), limit(10));
         const quizzesSnapshot = await getDocs(quizzesQuery);
 
         for (const quizDoc of quizzesSnapshot.docs) {
           const quizData = quizDoc.data();
           const authorId = quizData.authorId || quizData.userId || null;
-
-          let authorName = quizData.authorName || 'User';
-          let authorImage = quizData.authorImage || null;
-          let username = quizData.authorUsername || quizData.username || '';
-
-          if (authorId && (!quizData.authorName || !quizData.authorImage)) {
-            try {
-              const userRef = doc(db, 'users', authorId);
-              const userSnap = await getDoc(userRef);
-              if (userSnap.exists()) {
-                const userData = userSnap.data();
-                const fullName = [userData.firstName, userData.lastName].filter(Boolean).join(' ').trim();
-                authorName = fullName || userData.displayName || userData.name || userData.username || authorName;
-                authorImage = userData.profileImage || userData.avatar || userData.profile_image || userData.photoURL || authorImage;
-                username = userData.username || username;
-              }
-            } catch (authorError) {
-              console.log('Error fetching quiz author:', authorError);
-            }
-          }
+          
+          const { authorName, authorImage, username } = await getAuthorData(
+            authorId,
+            quizData.authorName,
+            quizData.authorImage,
+            quizData.authorUsername || quizData.username
+          );
 
           const questionCount = Array.isArray(quizData.questions) ? quizData.questions.length : quizData.questionCount || 0;
           const commentCount = typeof quizData.comments === 'number' ? quizData.comments : 0;
@@ -761,34 +790,21 @@ const HomeScreen = React.memo(({ navigation }) => {
         console.log('Error fetching quizzes:', quizError);
       }
 
-      // Global questions
+      // Global questions - REDUCED LIMIT
       try {
-        const questionsQuery = query(collection(db, 'questions'), orderBy('createdAt', 'desc'), limit(50));
+        const questionsQuery = query(collection(db, 'questions'), orderBy('createdAt', 'desc'), limit(10));
         const questionsSnapshot = await getDocs(questionsQuery);
 
         for (const questionDoc of questionsSnapshot.docs) {
           const questionData = questionDoc.data();
           const authorId = questionData.authorId || questionData.userId || null;
-
-          let authorName = questionData.authorName || 'User';
-          let authorImage = questionData.authorImage || null;
-          let username = questionData.authorUsername || questionData.username || '';
-
-          if (authorId && (!questionData.authorName || !questionData.authorImage)) {
-            try {
-              const userRef = doc(db, 'users', authorId);
-              const userSnap = await getDoc(userRef);
-              if (userSnap.exists()) {
-                const userData = userSnap.data();
-                const fullName = [userData.firstName, userData.lastName].filter(Boolean).join(' ').trim();
-                authorName = fullName || userData.displayName || userData.name || userData.username || authorName;
-                authorImage = userData.profileImage || userData.avatar || userData.profile_image || userData.photoURL || authorImage;
-                username = userData.username || username;
-              }
-            } catch (authorError) {
-              console.log('Error fetching question author:', authorError);
-            }
-          }
+          
+          const { authorName, authorImage, username } = await getAuthorData(
+            authorId,
+            questionData.authorName,
+            questionData.authorImage,
+            questionData.authorUsername || questionData.username
+          );
 
           const answerCount = typeof questionData.answerCount === 'number' ? questionData.answerCount : 0;
 
@@ -812,9 +828,9 @@ const HomeScreen = React.memo(({ navigation }) => {
         console.log('Error fetching questions:', questionError);
       }
 
-      // Community posts and blogs
+      // Community posts and blogs - REDUCED LIMIT
       try {
-        const communitiesQuery = query(collection(db, 'communities'), limit(10));
+        const communitiesQuery = query(collection(db, 'communities'), limit(5));
         const communitiesSnapshot = await getDocs(communitiesQuery);
 
         for (const commDoc of communitiesSnapshot.docs) {
@@ -829,25 +845,13 @@ const HomeScreen = React.memo(({ navigation }) => {
             for (const blogDoc of blogsSnapshot.docs) {
               const blogData = blogDoc.data();
               const authorId = blogData.authorId || null;
-
-              let authorName = blogData.authorName || 'User';
-              let authorImage = blogData.authorImage || null;
-              let username = blogData.username || '';
-
-              if (authorId && (!blogData.authorName || !blogData.authorImage)) {
-                try {
-                  const userRef = doc(db, 'users', authorId);
-                  const userSnap = await getDoc(userRef);
-                  if (userSnap.exists()) {
-                    const userData = userSnap.data();
-                    authorName = userData.displayName || userData.name || userData.fullName || userData.username || 'User';
-                    authorImage = userData.profileImage || userData.avatar || userData.profile_image || userData.photoURL || null;
-                    username = userData.username || username;
-                  }
-                } catch (e) {
-                  console.log('Error fetching author:', e);
-                }
-              }
+              
+              const { authorName, authorImage, username } = await getAuthorData(
+                authorId,
+                blogData.authorName,
+                blogData.authorImage,
+                blogData.username
+              );
 
               combinedPosts.push({
                 id: blogDoc.id,
@@ -869,34 +873,22 @@ const HomeScreen = React.memo(({ navigation }) => {
             console.log('Error fetching blogs:', e);
           }
 
-          // Community posts
+          // Community posts - REDUCED LIMIT
           try {
             const postsCol = collection(db, 'communities', commId, 'posts');
-            const postsQuery = query(postsCol, orderBy('createdAt', 'desc'), limit(20));
+            const postsQuery = query(postsCol, orderBy('createdAt', 'desc'), limit(10));
             const postsSnapshot = await getDocs(postsQuery);
 
             for (const postDoc of postsSnapshot.docs) {
               const postData = postDoc.data();
               const authorId = postData.authorId || null;
-
-              let authorName = postData.authorName || 'User';
-              let authorImage = postData.authorImage || null;
-              let username = postData.username || '';
-
-              if (authorId && (!postData.authorName || !postData.authorImage)) {
-                try {
-                  const userRef = doc(db, 'users', authorId);
-                  const userSnap = await getDoc(userRef);
-                  if (userSnap.exists()) {
-                    const userData = userSnap.data();
-                    authorName = userData.displayName || userData.name || userData.fullName || userData.username || 'User';
-                    authorImage = userData.profileImage || userData.avatar || userData.profile_image || userData.photoURL || null;
-                    username = userData.username || username;
-                  }
-                } catch (e) {
-                  console.log('Error fetching author:', e);
-                }
-              }
+              
+              const { authorName, authorImage, username } = await getAuthorData(
+                authorId,
+                postData.authorName,
+                postData.authorImage,
+                postData.username
+              );
 
               const images = Array.isArray(postData.images) ? postData.images : [];
 
@@ -932,7 +924,8 @@ const HomeScreen = React.memo(({ navigation }) => {
         return bTime - aTime;
       });
 
-      setAllPosts(combinedPosts.slice(0, 50));
+      console.log('✅ Loaded', combinedPosts.length, 'posts with', Object.keys(authorCache).length, 'unique authors');
+      setAllPosts(combinedPosts.slice(0, 30));
     } catch (e) {
       console.log('Error fetching all posts:', e);
     } finally {
@@ -957,22 +950,15 @@ const HomeScreen = React.memo(({ navigation }) => {
     };
   }, [fetchAllPosts]);
 
-  useFocusEffect(
-    useCallback(() => {
-      if (hasFetchedPosts.current) {
-        fetchAllPosts();
-      }
-    }, [fetchAllPosts])
-  );
-
-  // Real-time listeners for posts updates
+  // Real-time listeners for posts updates - OPTIMIZED
   useEffect(() => {
     if (allPosts.length === 0) return;
     
-    // db is now imported globally
+    // Limit real-time listeners to first 20 posts only for better performance
+    const postsToWatch = allPosts.slice(0, 20);
     const unsubscribes = [];
     
-    allPosts.forEach((post) => {
+    postsToWatch.forEach((post) => {
       const postInfo = getPostDocInfo(post);
       if (!postInfo?.docRef) {
         return;
@@ -1622,7 +1608,7 @@ const HomeScreen = React.memo(({ navigation }) => {
   };
 
   const handleDeletePost = async (post) => {
-    if (!currentUser?.id || !post?.id || !post.communityId) {
+    if (!currentUser?.id || !post?.id) {
       return;
     }
 
@@ -1644,13 +1630,54 @@ const HomeScreen = React.memo(({ navigation }) => {
       
       // Remove from local state
       setAllPosts((prev) => 
-        prev.filter(p => !(p.id === post.id && p.communityId === post.communityId))
+        prev.filter(p => !(
+          p.id === post.id && 
+          p.type === post.type &&
+          p.scope === post.scope &&
+          (p.communityId || 'global') === (post.communityId || 'global')
+        ))
       );
       
       Alert.alert('Success', 'Post deleted successfully.');
     } catch (e) {
       console.log('Error deleting post:', e);
       Alert.alert('Error', 'Unable to delete post. Please try again.');
+    }
+  };
+
+  const handleImagePress = (imageUri, allImages = [], startIndex = 0) => {
+    setSelectedImage(imageUri);
+    setAllImagesInPost(allImages.length > 0 ? allImages : [imageUri]);
+    setSelectedImageIndex(startIndex);
+    setImageViewerVisible(true);
+  };
+
+  const handleCloseImageViewer = () => {
+    setImageViewerVisible(false);
+    setSelectedImage(null);
+    setAllImagesInPost([]);
+    setSelectedImageIndex(0);
+  };
+
+  const handleNextImage = () => {
+    if (selectedImageIndex < allImagesInPost.length - 1) {
+      const newIndex = selectedImageIndex + 1;
+      setSelectedImageIndex(newIndex);
+      setSelectedImage(allImagesInPost[newIndex]);
+    }
+  };
+
+  const handlePrevImage = () => {
+    if (selectedImageIndex > 0) {
+      const newIndex = selectedImageIndex - 1;
+      setSelectedImageIndex(newIndex);
+      setSelectedImage(allImagesInPost[newIndex]);
+    }
+  };
+
+  const handleProfilePress = (userId) => {
+    if (userId) {
+      navigation.navigate('Profile', { userId });
     }
   };
 
@@ -1791,6 +1818,8 @@ const HomeScreen = React.memo(({ navigation }) => {
               onPollVote={post.type === 'poll' ? handlePollVote : undefined}
               pollVoteBusy={post.type === 'poll' ? pollBusy : false}
               onStartQuiz={post.type === 'quiz' ? handleStartQuiz : undefined}
+              onImagePress={handleImagePress}
+              onProfilePress={handleProfilePress}
               isLiked={isLiked}
               isFollowing={isFollowing}
               likeBusy={likeBusy}
@@ -2098,6 +2127,97 @@ const HomeScreen = React.memo(({ navigation }) => {
           </View>
         </View>
       </KeyboardAvoidingView>
+    </Modal>
+
+    {/* Image Viewer Modal */}
+    <Modal
+      visible={imageViewerVisible}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={handleCloseImageViewer}
+    >
+      <View style={styles.imageViewerContainer}>
+        {/* Close Button */}
+        <TouchableOpacity 
+          style={styles.imageViewerCloseButton}
+          onPress={handleCloseImageViewer}
+        >
+          <Ionicons name="close" size={30} color="#fff" />
+        </TouchableOpacity>
+
+        {/* Image Counter */}
+        {allImagesInPost.length > 1 && (
+          <View style={styles.imageCounter}>
+            <Text style={styles.imageCounterText}>
+              {selectedImageIndex + 1} / {allImagesInPost.length}
+            </Text>
+          </View>
+        )}
+
+        {/* Main Image */}
+        <View style={styles.imageViewerContent}>
+          {selectedImage && (
+            <Image
+              source={{ uri: selectedImage }}
+              style={styles.fullScreenImage}
+              resizeMode="contain"
+            />
+          )}
+        </View>
+
+        {/* Navigation Arrows */}
+        {allImagesInPost.length > 1 && (
+          <>
+            {selectedImageIndex > 0 && (
+              <TouchableOpacity
+                style={[styles.imageNavButton, styles.imageNavButtonLeft]}
+                onPress={handlePrevImage}
+              >
+                <Ionicons name="chevron-back" size={40} color="#fff" />
+              </TouchableOpacity>
+            )}
+            
+            {selectedImageIndex < allImagesInPost.length - 1 && (
+              <TouchableOpacity
+                style={[styles.imageNavButton, styles.imageNavButtonRight]}
+                onPress={handleNextImage}
+              >
+                <Ionicons name="chevron-forward" size={40} color="#fff" />
+              </TouchableOpacity>
+            )}
+          </>
+        )}
+
+        {/* Image Thumbnails */}
+        {allImagesInPost.length > 1 && (
+          <ScrollView 
+            horizontal 
+            style={styles.imageThumbnailsContainer}
+            contentContainerStyle={styles.imageThumbnailsContent}
+            showsHorizontalScrollIndicator={false}
+          >
+            {allImagesInPost.map((img, index) => (
+              <TouchableOpacity
+                key={index}
+                onPress={() => {
+                  setSelectedImageIndex(index);
+                  setSelectedImage(img);
+                }}
+                style={[
+                  styles.thumbnailWrapper,
+                  selectedImageIndex === index && styles.thumbnailWrapperActive
+                ]}
+              >
+                <Image
+                  source={{ uri: img }}
+                  style={styles.thumbnailImage}
+                  resizeMode="cover"
+                />
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+      </View>
     </Modal>
     </>
   );
@@ -2688,6 +2808,89 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#888',
     marginTop: 2,
+  },
+  // Image Viewer Modal Styles
+  imageViewerContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageViewerCloseButton: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    zIndex: 10,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 20,
+    padding: 8,
+  },
+  imageCounter: {
+    position: 'absolute',
+    top: 50,
+    left: 20,
+    zIndex: 10,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  imageCounterText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  imageViewerContent: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 100,
+  },
+  fullScreenImage: {
+    width: '100%',
+    height: '100%',
+  },
+  imageNavButton: {
+    position: 'absolute',
+    top: '50%',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 25,
+    padding: 10,
+    zIndex: 10,
+  },
+  imageNavButtonLeft: {
+    left: 20,
+  },
+  imageNavButtonRight: {
+    right: 20,
+  },
+  imageThumbnailsContainer: {
+    position: 'absolute',
+    bottom: 20,
+    left: 0,
+    right: 0,
+    maxHeight: 80,
+  },
+  imageThumbnailsContent: {
+    paddingHorizontal: 20,
+    alignItems: 'center',
+  },
+  thumbnailWrapper: {
+    width: 60,
+    height: 60,
+    marginHorizontal: 5,
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  thumbnailWrapperActive: {
+    borderColor: '#08FFE2',
+  },
+  thumbnailImage: {
+    width: '100%',
+    height: '100%',
   },
 });
 
