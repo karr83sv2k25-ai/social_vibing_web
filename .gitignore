@@ -1,4 +1,9 @@
-node_modules
-\n# Ignore backend config keys\nbackend/config/*.json
+# Node modules
+/node_modules/
 
-.expo/
+# Backend config files
+backend/config/*.json
+
+# Expo local state folder
+/.expo/
+    
