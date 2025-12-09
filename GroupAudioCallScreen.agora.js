@@ -29,7 +29,7 @@ import {
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { app as firebaseApp, db } from './firebaseConfig';
-import { AGORA_CONFIG, generateChannelName } from './agoraConfig';
+import { AGORA_CONFIG, generateChannelName, generateAgoraToken } from './agoraConfig';
 
 const { width } = Dimensions.get('window');
 
@@ -154,9 +154,18 @@ export default function GroupAudioCallScreen() {
         // Enable audio volume indication
         await engine.enableAudioVolumeIndication(300, 3, false);
 
-        // Generate channel name and join
+        // Generate channel name and token
         const channelName = generateChannelName(communityId, roomId);
-        await engine.joinChannel(AGORA_CONFIG.token, channelName, null, 0);
+        console.log('[Agora] Generating token for channel:', channelName);
+        
+        const token = await generateAgoraToken(channelName, 0, 1);
+        if (!token) {
+          console.error('[Agora] Failed to generate token');
+          Alert.alert('Error', 'Could not generate Agora token');
+          return;
+        }
+        
+        await engine.joinChannel(token, channelName, null, 0);
 
         console.log('[Agora] ✓ Engine initialized');
 

@@ -39,7 +39,7 @@ import {
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { app as firebaseApp, db } from './firebaseConfig';
-import { AGORA_CONFIG, generateChannelName } from './agoraConfig';
+import { AGORA_CONFIG, generateChannelName, generateAgoraToken } from './agoraConfig';
 
 const { width } = Dimensions.get('window');
 
@@ -233,14 +233,28 @@ export default function GroupAudioCallScreen() {
         // Enable audio volume indication
         await engine.enableAudioVolumeIndication(300, 3, false);
 
-        // Generate channel name and join (use callId as channel)
+        // Generate channel name and token
         const channelName = callId;
+        console.log('[Agora] Generating token for channel:', channelName);
+        
+        // Generate token dynamically
+        const token = await generateAgoraToken(channelName, 0, 1);
+        
+        if (!token) {
+          Alert.alert(
+            'Token Generation Failed',
+            'Could not generate Agora token. Please check your certificate configuration.',
+            [{ text: 'OK', onPress: () => navigation.goBack() }]
+          );
+          return;
+        }
+        
+        console.log('[Agora] Token generated successfully');
         console.log('[Agora] Joining channel:', channelName);
-        console.log('[Agora] Token:', AGORA_CONFIG.token ? 'Present' : 'NULL');
         
         // Join channel with correct v4.x API
         const result = await engine.joinChannel(
-          AGORA_CONFIG.token || '',  // token
+          token,                      // token (dynamically generated)
           channelName,                // channelId
           0,                          // uid (0 = auto-assign)
           {
@@ -257,9 +271,9 @@ export default function GroupAudioCallScreen() {
           if (result === -102) {
             errorMsg = 'Invalid App ID. Please check:\n1. App ID is correct in agoraConfig.js\n2. Project is active in Agora Console\n3. Wait 2-3 minutes for new projects to activate';
           } else if (result === -109 || result === 109) {
-            errorMsg = 'Token Error:\n1. Token expired - Generate new token\n2. OR disable App Certificate in Agora Console\n3. Set token to null in agoraConfig.js for testing';
+            errorMsg = 'Token Error:\n1. Token generation failed\n2. Check certificate in agoraConfig.js\n3. Verify App Certificate in Agora Console matches';
           } else if (result === -110 || result === 110) {
-            errorMsg = 'Connection Timeout:\n1. Check your internet connection\n2. Disable App Certificate in Agora Console (for null token)\n3. Or generate a valid token';
+            errorMsg = 'Connection Timeout:\n1. Check your internet connection\n2. Verify Agora project is active\n3. Check certificate configuration';
           }
           Alert.alert('Connection Error', errorMsg);
         }
