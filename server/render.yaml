@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: social-vibing-token-server
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: AGORA_APP_ID
+        value: 6158a2b02c6a422aa3646ee2c116efb8
+      - key: AGORA_APP_CERTIFICATE
+        sync: false
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
