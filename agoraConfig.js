@@ -2,14 +2,17 @@
 // Get your App ID from: https://console.agora.io
 
 export const AGORA_CONFIG = {
-  // App ID from Agora Console - Social_Vibing Project
-  appId: '16276327f0ba4a6597c6ee64e4e61a32',
+  // App ID from Agora Console - Social-Vibing-production Project
+  appId: '6158a2b02c6a422aa3646ee2c116efb8',
   
-  // Primary Certificate for token generation (Production Mode)
-  primaryCertificate: '912e7657245b4c109e1699f1d9dbb009',
+  // Production Token Server URL
+  // IMPORTANT: Make sure App Certificate is DISABLED in Agora Console for testing
+  // OR run the token server with your certificate
+  tokenServerUrl: null, // Set to null to work without certificate
   
-  // Secondary Certificate (Backup)
-  secondaryCertificate: '79cc87577d7d4e0baf468e37a8ad543f',
+  // Uncomment when token server is running with certificate:
+  // tokenServerUrl: 'http://192.168.1.100:3000/api/agora/token', // Replace with your IP
+  // tokenServerUrl: 'https://your-project.cloudfunctions.net/generateAgoraToken',
   
   // Channel configuration
   channelProfile: 0, // 0 = Communication (for calls)
@@ -31,45 +34,98 @@ export function generateChannelName(communityId, roomId) {
 
 /**
  * Generate Agora RTC Token
- * Note: In production, tokens should be generated on a secure backend server
- * This is a client-side implementation for development purposes
  * 
- * For production, use the Agora Token Server:
- * https://github.com/AgoraIO/Tools/tree/master/DynamicKey/AgoraDynamicKey
+ * If tokenServerUrl is null, returns null (no token mode - requires App Certificate disabled in Agora Console)
+ * If tokenServerUrl is set, fetches token from backend server
+ * 
+ * @param {string} channelName - Unique channel identifier
+ * @param {number} uid - User ID (0 for auto-assign)
+ * @param {number} role - User role (1=publisher, 2=subscriber)
+ * @returns {Promise<string|null>} Token or null if not needed/failed
  */
 export async function generateAgoraToken(channelName, uid = 0, role = 1) {
   try {
-    // In production, call your backend token server
-    // Example: const response = await fetch('https://your-server.com/api/agora/token', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({ channelName, uid, role })
-    // });
-    // return response.json().token;
+    // If no token server URL, work without token
+    if (!AGORA_CONFIG.tokenServerUrl) {
+      console.log('[Agora] ⚠️ No token server configured - working without token');
+      console.log('[Agora] ⚠️ Make sure App Certificate is DISABLED in Agora Console');
+      return null;
+    }
+
+    console.log('[Agora] Requesting token from server:', AGORA_CONFIG.tokenServerUrl);
     
-    // For now, we'll use the agora-token package
-    const { RtcTokenBuilder, RtcRole } = require('agora-token');
+    const response = await fetch(AGORA_CONFIG.tokenServerUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        channelName,
+        uid,
+        role
+      }),
+      // Timeout after 10 seconds
+      signal: AbortSignal.timeout(10000)
+    });
+
+    if (!response.ok) {
+      console.error('[Agora] Server responded with error:', response.status);
+      const errorText = await response.text();
+      console.error('[Agora] Error details:', errorText);
+      return null;
+    }
+
+    const data = await response.json();
     
-    const appId = AGORA_CONFIG.appId;
-    const appCertificate = AGORA_CONFIG.primaryCertificate;
-    const expirationTimeInSeconds = AGORA_CONFIG.tokenExpirationTime;
-    const currentTimestamp = Math.floor(Date.now() / 1000);
-    const privilegeExpiredTs = currentTimestamp + expirationTimeInSeconds;
+    if (data.success && data.token) {
+      console.log('[Agora] Token received successfully');
+      console.log('[Agora] Token expires at:', new Date(data.expiresAt * 1000).toLocaleString());
+      return data.token;
+    } else {
+      console.error('[Agora] Invalid response from server:', data.error || 'Unknown error');
+      return null;
+    }
     
-    // Build token
-    const token = RtcTokenBuilder.buildTokenWithUid(
-      appId,
-      appCertificate,
-      channelName,
-      uid,
-      role === 1 ? RtcRole.PUBLISHER : RtcRole.SUBSCRIBER,
-      privilegeExpiredTs
-    );
-    
-    return token;
   } catch (error) {
-    console.error('Error generating Agora token:', error);
-    // Fallback: return null and handle in calling code
+    console.error('[Agora] Error fetching token from server:', error.message);
+    console.error('[Agora] Make sure token server is running and accessible');
+    console.error('[Agora] Server URL:', AGORA_CONFIG.tokenServerUrl);
+    return null;
+  }
+}
+
+/**
+ * Renew an expiring token
+ * Call this when you receive a token-privilege-will-expire callback
+ */
+export async function renewAgoraToken(channelName, uid = 0) {
+  try {
+    const renewUrl = AGORA_CONFIG.tokenServerUrl.replace('/token', '/token/renew');
+    
+    const response = await fetch(renewUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        channelName,
+        uid
+      }),
+      signal: AbortSignal.timeout(10000)
+    });
+
+    const data = await response.json();
+    
+    if (data.success && data.token) {
+      console.log('[Agora] Token renewed successfully');
+      return data.token;
+    } else {
+      console.error('[Agora] Failed to renew token');
+      return null;
+    }
+    
+  } catch (error) {
+    console.error('[Agora] Error renewing token:', error);
     return null;
   }
 }

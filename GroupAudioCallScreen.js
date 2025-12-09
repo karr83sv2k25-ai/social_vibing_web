@@ -46,7 +46,10 @@ const { width } = Dimensions.get('window');
 export default function GroupAudioCallScreen() {
   const navigation = useNavigation();
   const route = useRoute();
-  const { communityId, callId, groupTitle } = route.params || {};
+  const { communityId, roomId, callId, groupTitle } = route.params || {};
+  
+  // Use roomId if provided (from voice chat), otherwise use callId (from regular calls)
+  const actualRoomId = roomId || callId;
 
   const [currentUser, setCurrentUser] = useState(null);
   const [participants, setParticipants] = useState([]);
@@ -122,7 +125,7 @@ export default function GroupAudioCallScreen() {
 
   // Initialize Agora and join channel
   useEffect(() => {
-    if (!currentUser?.id || !communityId || !callId) return;
+    if (!currentUser?.id || !communityId || !actualRoomId) return;
 
     let engine = null;
 
@@ -234,27 +237,17 @@ export default function GroupAudioCallScreen() {
         await engine.enableAudioVolumeIndication(300, 3, false);
 
         // Generate channel name and token
-        const channelName = callId;
-        console.log('[Agora] Generating token for channel:', channelName);
+        const channelName = actualRoomId;
+        console.log('[Agora] Joining channel:', channelName);
         
-        // Generate token dynamically
+        // Generate token (returns null if no token server configured)
         const token = await generateAgoraToken(channelName, 0, 1);
         
-        if (!token) {
-          Alert.alert(
-            'Token Generation Failed',
-            'Could not generate Agora token. Please check your certificate configuration.',
-            [{ text: 'OK', onPress: () => navigation.goBack() }]
-          );
-          return;
-        }
-        
-        console.log('[Agora] Token generated successfully');
-        console.log('[Agora] Joining channel:', channelName);
+        console.log('[Agora] Token:', token ? 'Received' : 'NULL (no certificate mode)');
         
         // Join channel with correct v4.x API
         const result = await engine.joinChannel(
-          token,                      // token (dynamically generated)
+          token || '',                // token (empty string if null)
           channelName,                // channelId
           0,                          // uid (0 = auto-assign)
           {
@@ -268,18 +261,24 @@ export default function GroupAudioCallScreen() {
         // Check result code
         if (result < 0) {
           let errorMsg = 'Failed to join channel';
+          let errorTitle = 'Connection Error';
+          
           if (result === -102) {
-            errorMsg = 'Invalid App ID. Please check:\n1. App ID is correct in agoraConfig.js\n2. Project is active in Agora Console\n3. Wait 2-3 minutes for new projects to activate';
+            errorTitle = 'Invalid App ID';
+            errorMsg = 'Please check:\n\n1. App ID is correct in agoraConfig.js\n2. Project is active in Agora Console\n3. Wait 2-3 minutes for new projects to activate';
           } else if (result === -109 || result === 109) {
-            errorMsg = 'Token Error:\n1. Token generation failed\n2. Check certificate in agoraConfig.js\n3. Verify App Certificate in Agora Console matches';
+            errorTitle = 'Token Error';
+            errorMsg = '⚠️ App Certificate is ENABLED but no token provided.\n\nTo fix this issue:\n\n1. Go to console.agora.io\n2. Select your project\n3. Click "Configure"\n4. DISABLE "Primary Certificate"\n5. Save and wait 2 minutes\n\nOR\n\nRun token server:\ncd server\nnode agoraTokenServer.js\n\nThen update tokenServerUrl in agoraConfig.js';
           } else if (result === -110 || result === 110) {
-            errorMsg = 'Connection Timeout:\n1. Check your internet connection\n2. Verify Agora project is active\n3. Check certificate configuration';
+            errorTitle = 'Connection Timeout';
+            errorMsg = 'Failed to join the voice channel. Please check:\n\n1. Your internet connection\n2. Agora App Certificate is DISABLED (for testing)\n   - Go to console.agora.io\n   - Select project → Configure\n   - Disable Primary Certificate\n   - Wait 2 minutes\n\n3. Or run token server if you need certificate enabled';
           }
-          Alert.alert('Connection Error', errorMsg);
+          
+          Alert.alert(errorTitle, errorMsg);
         }
 
-        // Add user to call participants using call system
-        const { joinGroupCall } = require('./callHelpers');
+        // Add user to call participants
+        console.log('[Agora] Adding user to room participants');
         
         // Ensure we have valid user data
         if (!currentUser.id || !currentUser.name) {
@@ -294,14 +293,33 @@ export default function GroupAudioCallScreen() {
         
         console.log('[Agora] Joining with user:', { id: currentUser.id, name: currentUser.name });
         
-        await joinGroupCall(
-          callId,
-          currentUser.id,
-          currentUser.name,
-          currentUser.profileImage || null
-        );
+        // Add to audio_calls room (for voice chat rooms from community)
+        const roomRef = doc(db, 'audio_calls', communityId, 'rooms', actualRoomId);
+        const roomSnap = await getDoc(roomRef);
         
-        console.log('[Agora] Successfully joined call');
+        if (roomSnap.exists()) {
+          const roomData = roomSnap.data();
+          const participants = roomData.participants || [];
+          
+          // Check if already joined
+          const alreadyJoined = participants.some(p => p.userId === currentUser.id);
+          
+          if (!alreadyJoined) {
+            await updateDoc(roomRef, {
+              participants: [...participants, {
+                userId: currentUser.id,
+                userName: currentUser.name,
+                profileImage: currentUser.profileImage || null,
+                joinedAt: new Date().toISOString(),
+                isMuted: false,
+                isSpeaking: false,
+              }],
+              updatedAt: new Date().toISOString(),
+            });
+          }
+        }
+        
+        console.log('[Agora] Successfully joined room');
         setIsCallActive(true);
       } catch (error) {
         console.log('[Agora] ❌ Init error:', error);
@@ -378,23 +396,23 @@ export default function GroupAudioCallScreen() {
     };
   }, [currentUser?.id, communityId, callId]);
 
-  // Listen for participants updates from call system
+  // Listen for participants updates from voice room
   useEffect(() => {
-    if (!callId) return;
+    if (!communityId || !actualRoomId) return;
 
-    const callRef = doc(db, 'calls', callId);
+    const roomRef = doc(db, 'audio_calls', communityId, 'rooms', actualRoomId);
 
     const unsubscribe = onSnapshot(
-      callRef,
+      roomRef,
       (snap) => {
         if (snap.exists()) {
           const data = snap.data();
           const participantsList = data.participants || [];
           
-          // If call ended or no participants left, exit
-          if (data.status === 'ended' || participantsList.length === 0) {
-            console.log('[Agora] Call ended');
-            Alert.alert('Call Ended', 'The call has been terminated', [
+          // If room ended or inactive
+          if (!data.isActive) {
+            console.log('[Agora] Room ended');
+            Alert.alert('Room Ended', 'The voice room has been closed', [
               { text: 'OK', onPress: () => navigation.goBack() }
             ]);
             return;
@@ -413,29 +431,29 @@ export default function GroupAudioCallScreen() {
             }
           });
           
-          setIsCallActive(data.status === 'answered' || data.status === 'ringing');
+          setIsCallActive(data.isActive);
         } else {
-          // Call was deleted
-          console.log('[Agora] Call no longer exists');
-          Alert.alert('Call Ended', 'This call has been closed', [
+          // Room was deleted
+          console.log('[Agora] Room no longer exists');
+          Alert.alert('Room Ended', 'This voice room has been closed', [
             { text: 'OK', onPress: () => navigation.goBack() }
           ]);
         }
       },
       (error) => {
-        console.log('[Agora] Error in call snapshot listener:', error.code);
+        console.log('[Agora] Error in room snapshot listener:', error.code);
       }
     );
 
     return () => unsubscribe();
-  }, [callId]);
+  }, [communityId, actualRoomId]);
 
   // Listen for chat messages
   useEffect(() => {
-    if (!callId) return;
+    if (!communityId || !actualRoomId) return;
 
-    // Listen to chat messages in calls subcollection
-    const chatRef = collection(db, 'calls', callId, 'chat');
+    // Listen to chat messages in audio_calls room subcollection
+    const chatRef = collection(db, 'audio_calls', communityId, 'rooms', actualRoomId, 'chat');
     const q = query(chatRef, orderBy('createdAt', 'asc'));
 
     const unsubscribe = onSnapshot(
@@ -468,7 +486,7 @@ export default function GroupAudioCallScreen() {
     );
 
     return () => unsubscribe();
-  }, [callId, showChat, currentUser?.id]);
+  }, [communityId, actualRoomId, showChat, currentUser?.id]);
 
   // Reset unread count when chat opens
   useEffect(() => {
@@ -627,8 +645,8 @@ export default function GroupAudioCallScreen() {
     if (!chatInput.trim() || !currentUser) return;
 
     try {
-      // Store chat in calls subcollection
-      const chatRef = collection(db, 'calls', callId, 'chat');
+      // Store chat in audio_calls room subcollection
+      const chatRef = collection(db, 'audio_calls', communityId, 'rooms', actualRoomId, 'chat');
       
       await addDoc(chatRef, {
         text: chatInput.trim(),

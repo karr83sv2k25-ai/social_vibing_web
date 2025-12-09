@@ -156,16 +156,12 @@ export default function GroupAudioCallScreen() {
 
         // Generate channel name and token
         const channelName = generateChannelName(communityId, roomId);
-        console.log('[Agora] Generating token for channel:', channelName);
+        console.log('[Agora] Joining channel:', channelName);
         
         const token = await generateAgoraToken(channelName, 0, 1);
-        if (!token) {
-          console.error('[Agora] Failed to generate token');
-          Alert.alert('Error', 'Could not generate Agora token');
-          return;
-        }
+        console.log('[Agora] Token:', token ? 'Received' : 'NULL (no certificate mode)');
         
-        await engine.joinChannel(token, channelName, null, 0);
+        await engine.joinChannel(token || '', channelName, null, 0);
 
         console.log('[Agora] ✓ Engine initialized');
 

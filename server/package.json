@@ -1,0 +1,33 @@
+{
+  "name": "agora-token-server",
+  "version": "1.0.0",
+  "description": "Production-level Agora RTC Token Server",
+  "main": "agoraTokenServer.js",
+  "scripts": {
+    "start": "node agoraTokenServer.js",
+    "dev": "nodemon agoraTokenServer.js",
+    "test": "node test/tokenServer.test.js"
+  },
+  "keywords": [
+    "agora",
+    "rtc",
+    "token",
+    "server",
+    "voice",
+    "video"
+  ],
+  "author": "Social Vibing",
+  "license": "MIT",
+  "dependencies": {
+    "agora-token": "^2.0.4",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
