@@ -1,3 +1,23 @@
+/**
+ * End a group call room (audio_calls/rooms)
+ * @param {string} communityId - Community ID
+ * @param {string} roomId - Room ID
+ * @param {number} duration - Call duration in seconds (optional)
+ */
+export const endGroupRoom = async (communityId, roomId, duration = 0) => {
+  try {
+    const roomRef = doc(db, 'audio_calls', communityId, 'rooms', roomId);
+    await updateDoc(roomRef, {
+      isActive: false,
+      status: 'ended',
+      endedAt: serverTimestamp(),
+      duration,
+    });
+  } catch (error) {
+    console.error('Error ending group room:', error);
+    throw error;
+  }
+};
 import {
   collection,
   addDoc,

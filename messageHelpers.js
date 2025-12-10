@@ -22,7 +22,12 @@ export async function getOrCreateConversation(currentUserId, otherUserId) {
     // Find existing conversation with the other user
     for (const docSnap of snapshot.docs) {
       const participants = docSnap.data().participants;
-      if (participants.includes(otherUserId)) {
+      // Support both array of strings and array of objects
+      const hasUser = Array.isArray(participants) && participants.length > 0 &&
+        (typeof participants[0] === 'string'
+          ? participants.includes(otherUserId)
+          : participants.some(p => p.userId === otherUserId));
+      if (hasUser) {
         return docSnap.id;
       }
     }

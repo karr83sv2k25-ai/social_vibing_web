@@ -124,7 +124,12 @@ export async function acceptFriendRequest(requestId, fromUserId) {
       // Check if conversation with this user already exists
       for (const docSnap of snapshot.docs) {
         const participants = docSnap.data().participants;
-        if (participants.includes(fromUserId) && participants.length === 2) {
+        // Support both array of strings and array of objects
+        const hasUser = Array.isArray(participants) && participants.length > 0 &&
+          (typeof participants[0] === 'string'
+            ? participants.includes(fromUserId)
+            : participants.some(p => p.userId === fromUserId));
+        if (hasUser && participants.length === 2) {
           conversationExists = true;
           break;
         }

@@ -725,7 +725,7 @@ export default function RoleplayScreen() {
                 },
               },
             ]
-          );
+          )
         } else {
           // Regular participant leaving
           Alert.alert(

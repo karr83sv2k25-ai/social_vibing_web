@@ -1,3 +1,21 @@
+// Helper to send a system message to chat when session ends
+async function sendSessionEndSystemMessage(communityId, currentUser) {
+  try {
+    if (!communityId || !currentUser) return;
+    const firestore = await import('firebase/firestore');
+    const chatCol = collection(db, 'community_chats', communityId, 'messages');
+    await firestore.addDoc(chatCol, {
+      text: 'Session ended',
+      type: 'system',
+      sender: 'System',
+      senderId: 'system',
+      profileImage: null,
+      createdAt: firestore.serverTimestamp(),
+    });
+  } catch (e) {
+    console.log('Error sending session end system message:', e);
+  }
+}
 import React, { useState, useEffect, useRef, useCallback, memo, useMemo } from 'react';
 import {
   View,
@@ -191,40 +209,52 @@ const MessageRow = memo(({
         )}
 
         {/* Voice Room Message - Only show active rooms */}
-        {(msg.type === 'voiceChat' || isVoiceRoomType(msg.type)) && msg.isActive && (
-          <TouchableOpacity
-            style={styles.voiceChatMessageContainer}
-            onPress={() => handleJoinVoiceChat(msg.id, msg.roomId, msg.participants || [])}
-            activeOpacity={0.7}
-          >
-            <View style={styles.voiceChatHeader}>
-              <View style={styles.voiceIconPulse}>
-                <MaterialCommunityIcons name="waveform" size={28} color="#00FFFF" />
-              </View>
-              <Text style={styles.voiceChatTitle} numberOfLines={1} ellipsizeMode="tail">Live Voice Room</Text>
-              <View style={styles.liveIndicator}>
-                <View style={styles.liveDot} />
-                <Text style={styles.liveText}>LIVE</Text>
-              </View>
+        {(msg.type === 'voiceChat' || isVoiceRoomType(msg.type)) && (
+          <View>
+            <View style={msg.isActive ? undefined : {alignItems: 'center', marginBottom: 4}}>
+              {!msg.isActive && (
+                <View style={{backgroundColor: '#EF4444', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4}}>
+                  <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 13}}>Voice Chat Ended</Text>
+                </View>
+              )}
+              <TouchableOpacity
+                style={msg.isActive ? [styles.voiceChatMessageContainer, {flexWrap: 'wrap', minHeight: 80}] : [styles.voiceChatMessageContainer, {opacity: 0.7, flexWrap: 'wrap', minHeight: 80}]}
+                disabled={!msg.isActive}
+                onPress={() => msg.isActive && handleJoinVoiceChat(msg.id, msg.roomId, msg.participants || [])}
+                activeOpacity={0.7}
+              >
+                <View style={styles.voiceChatHeader}>
+                  <View style={styles.voiceIconPulse}>
+                    <MaterialCommunityIcons name="waveform" size={28} color="#00FFFF" />
+                  </View>
+                  <Text style={styles.voiceChatTitle} numberOfLines={1} ellipsizeMode="tail">Live Voice Room</Text>
+                  <Text style={styles.voiceChatParticipants}>
+                    👥 {msg.participants?.length || 1} {msg.participants?.length === 1 ? 'person' : 'people'} in room
+                  </Text>
+                  <View style={styles.liveIndicator}>
+                    <View style={styles.liveDot} />
+                    <Text style={styles.liveText}>
+                      {msg.isActive ? 'LIVE' : 'ENDED'}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.voiceChatText} numberOfLines={2} ellipsizeMode="tail">
+                  {msg.sender || 'User'} started a voice room
+                </Text>
+                {msg.isActive && (msg.participants?.includes(currentUser?.id) ? (
+                  <View style={styles.joinedVoiceChatBadge}>
+                    <Ionicons name="checkmark-circle" size={18} color="#00FFFF" />
+                    <Text style={styles.joinedVoiceChatText}>You're in - Tap to rejoin</Text>
+                  </View>
+                ) : (
+                  <View style={styles.joinVoiceChatButton}>
+                    <Ionicons name="enter-outline" size={18} color="#000" />
+                    <Text style={styles.joinVoiceChatText}>Tap to Join</Text>
+                  </View>
+                ))}
+              </TouchableOpacity>
             </View>
-            <Text style={styles.voiceChatText} numberOfLines={2} ellipsizeMode="tail">
-              {msg.sender || 'User'} started a voice room
-            </Text>
-            <Text style={styles.voiceChatParticipants}>
-              👥 {msg.participants?.length || 1} {msg.participants?.length === 1 ? 'person' : 'people'} in room
-            </Text>
-            {msg.participants?.includes(currentUser?.id) ? (
-              <View style={styles.joinedVoiceChatBadge}>
-                <Ionicons name="checkmark-circle" size={18} color="#00FFFF" />
-                <Text style={styles.joinedVoiceChatText}>You're in - Tap to rejoin</Text>
-              </View>
-            ) : (
-              <View style={styles.joinVoiceChatButton}>
-                <Ionicons name="enter-outline" size={18} color="#000" />
-                <Text style={styles.joinVoiceChatText}>Tap to Join</Text>
-              </View>
-            )}
-          </TouchableOpacity>
+          </View>
         )}
 
         {/* Screening Room Message - Only show active rooms */}
@@ -289,7 +319,7 @@ const MessageRow = memo(({
               {msg.isActive && (
                 <View style={styles.liveIndicator}>
                   <View style={styles.liveDot} />
-                  <Text style={styles.liveText}>LIVE</Text>
+                    <Text style={styles.liveText}>{msg.isActive ? 'LIVE' : 'ENDED'}</Text>
                 </View>
               )}
             </View>
@@ -526,6 +556,20 @@ const MessageRow = memo(({
 
 
 export default function GroupInfoScreen() {
+    // Call this after ending a voice room session
+    const handleVoiceRoomSessionEnd = useCallback(async (messageId) => {
+      // 1. Send system message
+      await sendSessionEndSystemMessage(communityId, currentUser);
+      // 2. Update the voice room message's isActive to false in Firestore
+      try {
+        if (!communityId || !messageId) return;
+        const firestore = await import('firebase/firestore');
+        const messageRef = firestore.doc(db, 'community_chats', communityId, 'messages', messageId);
+        await firestore.updateDoc(messageRef, { isActive: false });
+      } catch (e) {
+        console.log('Error updating voice room message to ended:', e);
+      }
+    }, [communityId, currentUser]);
   const navigation = useNavigation();
   const route = useRoute();
   const { communityId, groupTitle } = route.params || {};
@@ -2843,7 +2887,12 @@ export default function GroupInfoScreen() {
       }
 
       // Add user to participants if not already there
-      if (!currentParticipants.includes(currentUser.id)) {
+      // Support both array of strings and array of objects
+      const hasUser = Array.isArray(currentParticipants) && currentParticipants.length > 0 &&
+        (typeof currentParticipants[0] === 'string'
+          ? currentParticipants.includes(currentUser.id)
+          : currentParticipants.some(p => p.userId === currentUser.id));
+      if (!hasUser) {
         const now = new Date().toISOString();
         
         // Update room participants
@@ -2902,7 +2951,12 @@ export default function GroupInfoScreen() {
       }
 
       // Add user to participants if not already there
-      if (!currentParticipants.includes(currentUser.id)) {
+      // Support both array of strings and array of objects
+      const hasUser2 = Array.isArray(currentParticipants) && currentParticipants.length > 0 &&
+        (typeof currentParticipants[0] === 'string'
+          ? currentParticipants.includes(currentUser.id)
+          : currentParticipants.some(p => p.userId === currentUser.id));
+      if (!hasUser2) {
         const now = new Date().toISOString();
         
         // Update room participants
@@ -3150,7 +3204,12 @@ export default function GroupInfoScreen() {
       const sessionData = sessionSnap.data();
       const availableRoles = (sessionData.roles || []).filter(r => !r.taken);
 
-      if (currentParticipants.includes(currentUser.id)) {
+      // Support both array of strings and array of objects
+      const hasUser3 = Array.isArray(currentParticipants) && currentParticipants.length > 0 &&
+        (typeof currentParticipants[0] === 'string'
+          ? currentParticipants.includes(currentUser.id)
+          : currentParticipants.some(p => p.userId === currentUser.id));
+      if (hasUser3) {
         Alert.alert('Already Joined', 'You are already in this roleplay session!');
         return;
       }

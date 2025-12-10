@@ -463,16 +463,19 @@ export default function GroupAudioCallScreen() {
           id: docSnap.id,
           ...docSnap.data()
         }));
-        setChatMessages(messages);
-        
+        // Only show messages from users currently in participants
+        const participantIds = participants.map(p => p.userId);
+        const filteredMessages = messages.filter(msg => participantIds.includes(msg.senderId));
+        setChatMessages(filteredMessages);
+
         // Update unread count if chat is closed
-        if (!showChat && messages.length > 0) {
-          const lastMessage = messages[messages.length - 1];
+        if (!showChat && filteredMessages.length > 0) {
+          const lastMessage = filteredMessages[filteredMessages.length - 1];
           if (lastMessage.senderId !== currentUser?.id) {
             setUnreadCount(prev => prev + 1);
           }
         }
-        
+
         // Auto scroll to bottom
         setTimeout(() => {
           if (chatScrollRef.current && showChat) {
@@ -486,7 +489,7 @@ export default function GroupAudioCallScreen() {
     );
 
     return () => unsubscribe();
-  }, [communityId, actualRoomId, showChat, currentUser?.id]);
+  }, [communityId, actualRoomId, showChat, currentUser?.id, participants]);
 
   // Reset unread count when chat opens
   useEffect(() => {
@@ -618,18 +621,28 @@ export default function GroupAudioCallScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const { endCall: endGroupCall } = require('./callHelpers');
-              
-              // End the call for everyone
-              await endGroupCall(callId, callDuration);
-              
-              // Leave Agora channel
+              const { endGroupRoom } = require('./callHelpers');
+              await endGroupRoom(communityId, actualRoomId, callDuration);
+              // Update the corresponding message in community_chats/messages to isActive: false
+              try {
+                // Find the message with roomId == actualRoomId
+                const messagesRef = collection(db, 'community_chats', communityId, 'messages');
+                const q = query(messagesRef, where('roomId', '==', actualRoomId));
+                const snapshot = await getDocs(q);
+                if (!snapshot.empty) {
+                  const messageDoc = snapshot.docs[0];
+                  await updateDoc(messageDoc.ref, { isActive: false });
+                  console.log('[Agora] Updated message status to ended');
+                } else {
+                  console.log('[Agora] No matching message found for roomId:', actualRoomId);
+                }
+              } catch (e) {
+                console.log('[Agora] Error updating message status:', e);
+              }
               if (agoraEngine) {
                 await agoraEngine.leaveChannel();
               }
-              
-              console.log('[Agora] Call ended by creator');
-              navigation.goBack();
+              // Do not navigate away; stay on the current community screen after ending the call
             } catch (error) {
               console.log('[Agora] Error ending session:', error);
               Alert.alert('Error', 'Failed to end the call. Please try again.');
@@ -730,8 +743,11 @@ export default function GroupAudioCallScreen() {
       <SafeAreaView style={styles.safeArea}>
         {/* Top Bar */}
         <View style={styles.topBar}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.closeButton}>
-            <Ionicons name="close" size={28} color="#fff" />
+          <TouchableOpacity onPress={endSession} style={styles.closeButton}>
+            <Ionicons name="close" size={28} color="#fff" onPress={async () => {
+              await endSession();
+              navigation.replace('CommunityDetail', { communityId });
+            }} />
           </TouchableOpacity>
           <View style={styles.participantCount}>
             <Text style={styles.participantCountText}>
@@ -767,7 +783,7 @@ export default function GroupAudioCallScreen() {
           </TouchableOpacity>
           <TouchableOpacity 
             style={styles.powerButton}
-            onPress={endCall}
+            onPress={endSession}
           >
             <Ionicons name="power" size={24} color="#fff" />
           </TouchableOpacity>
@@ -826,18 +842,9 @@ export default function GroupAudioCallScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity style={[styles.controlButton, styles.endCallButton]} onPress={endCall}>
-            <Ionicons name="call" size={28} color="#fff" />
+            <Ionicons name="call" size={28} color="#fff" onPress={endSession} />
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={styles.controlButton}
-            onPress={() => {
-              // Minimize/background functionality
-              navigation.goBack();
-            }}
-          >
-            <Ionicons name="remove-outline" size={28} color="#fff" />
-          </TouchableOpacity>
 
           <TouchableOpacity style={styles.controlButton} onPress={toggleSpeaker}>
             <MaterialCommunityIcons
