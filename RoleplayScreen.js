@@ -88,6 +88,7 @@ export default function RoleplayScreen() {
   const [participantCharacters, setParticipantCharacters] = useState({});
   const [existingCharacters, setExistingCharacters] = useState([]);
   const [showCharacterSelector, setShowCharacterSelector] = useState(false);
+  const [roleplayCreatorId, setRoleplayCreatorId] = useState(null);
   const [loadingCharacters, setLoadingCharacters] = useState(false);
 
   // Helper functions for color contrast
@@ -225,7 +226,11 @@ export default function RoleplayScreen() {
       setTextColor(character.textColor || '#1F2937');
       setShowCharacterSelector(false);
       
-      Alert.alert('Success', `Character "${character.name}" selected!`);
+      Alert.alert(
+        'Character Selected!', 
+        `You'll enter the roleplay as "${character.name}". Your character's details will be visible to other participants.`,
+        [{ text: 'Enter Roleplay', onPress: () => {} }]
+      );
     } catch (error) {
       console.error('Error selecting character:', error);
       Alert.alert('Error', 'Failed to select character');
@@ -267,7 +272,11 @@ export default function RoleplayScreen() {
       setMyCharacterId(characterId);
       setShowCharacterCustomization(false);
       
-      Alert.alert('Success', `Character "${characterName}" saved!`);
+      Alert.alert(
+        'Character Created!', 
+        `"${characterName}" is ready for roleplay! You'll now appear with this character's details in the roleplay session.`,
+        [{ text: 'Enter Roleplay', onPress: () => {} }]
+      );
     } catch (error) {
       console.error('Error saving character:', error);
       Alert.alert('Error', 'Failed to save character customization');
@@ -304,7 +313,7 @@ export default function RoleplayScreen() {
     loadExistingCharacters();
   }, [currentUser?.id]);
 
-  // Load character data for this session
+  // Load character data for this session and prompt character creation if needed
   useEffect(() => {
     if (!currentUser?.id || !communityId || !sessionId) return;
 
@@ -362,11 +371,19 @@ export default function RoleplayScreen() {
           setFrameColor(charData.frameColor || '#FFD700');
           setTextColor(charData.textColor || '#1F2937');
         } else {
-          // No character found - use default character settings
-          setCharacterName(currentUser.name || 'User');
-          setCharacterImage(currentUser.profileImage || null);
+          // No character found for this session - ALWAYS show character selector
+          // Set default values first
+          setCharacterName('');
+          setCharacterDescription('');
+          setCharacterImage(null);
           setFrameColor('#A855F7');
           setTextColor('#FFFFFF');
+          
+          // ALWAYS show character selector modal when joining a roleplay
+          // User must choose: existing character or create new one
+          setTimeout(() => {
+            setShowCharacterSelector(true);
+          }, 500); // Small delay to ensure UI is ready
         }
       } catch (error) {
         console.error('Error loading character:', error);
@@ -474,6 +491,7 @@ export default function RoleplayScreen() {
             setScenario(sessionData.scenario || '');
             setRoles(sessionData.roles || []);
             setParticipants(sessionData.participants || []);
+            setRoleplayCreatorId(sessionData.createdBy || null); // Set creator ID
 
             // Find user's role
             const userParticipant = sessionData.participants?.find(p => p.userId === userId);
@@ -527,6 +545,7 @@ export default function RoleplayScreen() {
         setParticipants(data.participants || []);
         setRoles(data.roles || []);
         setScenario(data.scenario || '');
+        setRoleplayCreatorId(data.createdBy || null); // Update creator ID on changes
       }
     });
 
@@ -693,8 +712,8 @@ export default function RoleplayScreen() {
                       p => p.userId !== currentUser.id
                     );
 
-                    // Mark role as available again
-                    const updatedRoles = data.roles.map(r => 
+                    // Mark role as available again (only if roles exist)
+                    const updatedRoles = (data.roles || []).map(r => 
                       r.takenBy === currentUser.id
                         ? { ...r, taken: false, takenBy: null, takenByName: null }
                         : r
@@ -703,11 +722,17 @@ export default function RoleplayScreen() {
                     if (updatedParticipants.length === 0) {
                       await deleteDoc(sessionRef);
                     } else {
-                      await updateDoc(sessionRef, {
+                      const updateData = {
                         participants: updatedParticipants,
-                        roles: updatedRoles,
                         updatedAt: serverTimestamp(),
-                      });
+                      };
+                      
+                      // Only update roles if they exist
+                      if (data.roles && data.roles.length > 0) {
+                        updateData.roles = updatedRoles;
+                      }
+                      
+                      await updateDoc(sessionRef, updateData);
                     }
                     
                     navigation.goBack();
@@ -742,8 +767,8 @@ export default function RoleplayScreen() {
                       p => p.userId !== currentUser.id
                     );
 
-                    // Mark role as available again
-                    const updatedRoles = data.roles.map(r => 
+                    // Mark role as available again (only if roles exist)
+                    const updatedRoles = (data.roles || []).map(r => 
                       r.takenBy === currentUser.id
                         ? { ...r, taken: false, takenBy: null, takenByName: null }
                         : r
@@ -752,11 +777,17 @@ export default function RoleplayScreen() {
                     if (updatedParticipants.length === 0) {
                       await deleteDoc(sessionRef);
                     } else {
-                      await updateDoc(sessionRef, {
+                      const updateData = {
                         participants: updatedParticipants,
-                        roles: updatedRoles,
                         updatedAt: serverTimestamp(),
-                      });
+                      };
+                      
+                      // Only update roles if they exist
+                      if (data.roles && data.roles.length > 0) {
+                        updateData.roles = updatedRoles;
+                      }
+                      
+                      await updateDoc(sessionRef, updateData);
                     }
                     
                     navigation.goBack();
@@ -804,64 +835,59 @@ export default function RoleplayScreen() {
 
         {/* Main Roleplay Stage Area */}
         <View style={styles.mainStageContainer}>
-          {/* Circular Participants Layout */}
-          <View style={styles.circularParticipantsContainer}>
-            {participants.map((participant, index) => {
-              const character = participantCharacters[participant.userId];
-              const characterImage = character?.imageUrl;
-              const displayName = character?.name || participant.userName;
-              const charFrameColor = character?.frameColor || '#FFD700';
-              
-              // Position participants in a circle
-              const angle = (index * 360) / participants.length;
-              const radius = 100;
-              const x = Math.cos((angle - 90) * Math.PI / 180) * radius;
-              const y = Math.sin((angle - 90) * Math.PI / 180) * radius;
-              
-              return (
-                <View 
-                  key={participant.userId} 
-                  style={[
-                    styles.circularParticipant,
-                    {
-                      transform: [
-                        { translateX: x },
-                        { translateY: y }
-                      ]
-                    }
-                  ]}
-                >
-                  {/* Crown icon for active/special participants */}
-                  <View style={styles.crownIconContainer}>
-                    <MaterialCommunityIcons name="crown" size={24} color="#FFD700" />
-                  </View>
-                  
-                  {/* Character Avatar */}
-                  <View style={[
-                    styles.circularAvatar,
-                    { borderColor: charFrameColor }
-                  ]}>
-                    {characterImage ? (
-                      <Image
-                        source={{ uri: characterImage }}
-                        style={styles.circularAvatarImage}
-                        defaultSource={require('./assets/a1.png')}
-                      />
-                    ) : (
-                      <Image
-                        source={require('./assets/a1.png')}
-                        style={styles.circularAvatarImage}
-                      />
+          {/* Horizontal Participants Layout Above Play Button */}
+          <View style={styles.horizontalParticipantsContainer}>
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalParticipantsContent}
+            >
+              {participants.map((participant, index) => {
+                const character = participantCharacters[participant.userId];
+                const characterImage = character?.imageUrl;
+                const displayName = character?.name || participant.userName;
+                const charFrameColor = character?.frameColor || '#FFD700';
+                const isCreator = participant.userId === roleplayCreatorId;
+                
+                return (
+                  <View 
+                    key={participant.userId} 
+                    style={styles.horizontalParticipant}
+                  >
+                    {/* Crown icon ONLY for creator */}
+                    {isCreator && (
+                      <View style={styles.crownIconContainer}>
+                        <MaterialCommunityIcons name="crown" size={24} color="#FFD700" />
+                      </View>
                     )}
+                    
+                    {/* Character Avatar */}
+                    <View style={[
+                      styles.horizontalAvatar,
+                      { borderColor: charFrameColor }
+                    ]}>
+                      {characterImage ? (
+                        <Image
+                          source={{ uri: characterImage }}
+                          style={styles.horizontalAvatarImage}
+                          defaultSource={require('./assets/a1.png')}
+                        />
+                      ) : (
+                        <Image
+                          source={require('./assets/a1.png')}
+                          style={styles.horizontalAvatarImage}
+                        />
+                      )}
+                    </View>
+                    
+                    {/* Character/Participant Name */}
+                    <Text style={styles.horizontalParticipantName} numberOfLines={1}>
+                      {displayName}
+                    </Text>
                   </View>
-                  
-                  {/* Character/Participant Name */}
-                  <Text style={styles.circularParticipantName} numberOfLines={1}>
-                    {displayName}
-                  </Text>
-                </View>
-              );
-            })}
+                );
+              })}
+            </ScrollView>
           </View>
 
           {/* Center Play Button */}
@@ -1288,18 +1314,55 @@ export default function RoleplayScreen() {
           visible={showCharacterSelector}
           animationType="slide"
           transparent={false}
+          onRequestClose={() => {
+            // When user presses back button, confirm if they want to leave roleplay
+            Alert.alert(
+              'Character Required',
+              'You need to create or select a character to participate in this roleplay. Do you want to leave?',
+              [
+                { text: 'Stay', style: 'cancel' },
+                {
+                  text: 'Leave Roleplay',
+                  style: 'destructive',
+                  onPress: () => {
+                    setShowCharacterSelector(false);
+                    navigation.goBack();
+                  }
+                }
+              ]
+            );
+          }}
         >
           <LinearGradient colors={['#1a0a2e', '#2d1b4e', '#1a0a2e']} style={styles.container}>
             <SafeAreaView style={styles.safeArea}>
               {/* Selector Header */}
               <LinearGradient colors={['#7C3AED', '#9333EA', '#A855F7']} style={styles.header}>
                 <View style={styles.headerContent}>
-                  <TouchableOpacity onPress={() => setShowCharacterSelector(false)} style={styles.backButton}>
+                  <TouchableOpacity 
+                    onPress={() => {
+                      Alert.alert(
+                        'Character Required',
+                        'You need to create or select a character to participate in this roleplay. Do you want to leave?',
+                        [
+                          { text: 'Stay', style: 'cancel' },
+                          {
+                            text: 'Leave Roleplay',
+                            style: 'destructive',
+                            onPress: () => {
+                              setShowCharacterSelector(false);
+                              navigation.goBack();
+                            }
+                          }
+                        ]
+                      );
+                    }} 
+                    style={styles.backButton}
+                  >
                     <Ionicons name="close" size={24} color="#fff" />
                   </TouchableOpacity>
                   <View style={styles.headerTextContainer}>
                     <Text style={styles.headerTitle}>Select Character</Text>
-                    <Text style={styles.headerSubtitle}>Choose from your characters</Text>
+                    <Text style={styles.headerSubtitle}>Required to join roleplay</Text>
                   </View>
                   <MaterialCommunityIcons name="account-group" size={28} color="#fff" />
                 </View>
@@ -1313,6 +1376,26 @@ export default function RoleplayScreen() {
                   </View>
                 ) : (
                   <>
+                    {/* Info Message */}
+                    <View style={styles.characterRequiredInfo}>
+                      <MaterialCommunityIcons name="drama-masks" size={24} color="#FFD700" />
+                      <Text style={styles.characterRequiredText}>
+                        Welcome to the roleplay! To participate, you need a character.
+                        {existingCharacters.length > 0 
+                          ? ' Choose one of your existing characters or create a new one for this roleplay.'
+                          : ' Create your character with a unique name, image, and appearance!'}
+                      </Text>
+                    </View>
+
+                    {existingCharacters.length > 0 && (
+                      <>
+                        <Text style={styles.sectionLabel}>Use Existing Character</Text>
+                        <Text style={styles.sectionDescription}>
+                          Select a character you've already created
+                        </Text>
+                      </>
+                    )}
+
                     {existingCharacters.map((character) => (
                       <TouchableOpacity
                         key={character.id}
@@ -1362,6 +1445,20 @@ export default function RoleplayScreen() {
                       </TouchableOpacity>
                     ))}
 
+                    {existingCharacters.length > 0 && (
+                      <>
+                        <View style={styles.dividerContainer}>
+                          <View style={styles.dividerLine} />
+                          <Text style={styles.dividerText}>OR</Text>
+                          <View style={styles.dividerLine} />
+                        </View>
+                        <Text style={styles.sectionLabel}>Create New Character</Text>
+                        <Text style={styles.sectionDescription}>
+                          Design a brand new character for this roleplay
+                        </Text>
+                      </>
+                    )}
+
                     <TouchableOpacity
                       style={styles.createNewCharacterButton}
                       onPress={() => {
@@ -1370,7 +1467,12 @@ export default function RoleplayScreen() {
                       }}
                     >
                       <MaterialCommunityIcons name="plus-circle" size={32} color="#A855F7" />
-                      <Text style={styles.createNewCharacterText}>Create New Character</Text>
+                      <View>
+                        <Text style={styles.createNewCharacterText}>Create New Character</Text>
+                        <Text style={styles.createNewCharacterSubtext}>
+                          Customize name, image, and colors
+                        </Text>
+                      </View>
                     </TouchableOpacity>
                   </>
                 )}
@@ -1472,10 +1574,48 @@ const styles = StyleSheet.create({
   },
   mainStageContainer: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     alignItems: 'center',
     paddingVertical: 40,
     position: 'relative',
+  },
+  horizontalParticipantsContainer: {
+    width: '100%',
+    marginBottom: 40,
+    zIndex: 10,
+  },
+  horizontalParticipantsContent: {
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 20,
+  },
+  horizontalParticipant: {
+    alignItems: 'center',
+    position: 'relative',
+    width: 85,
+    marginTop: 20,
+  },
+  horizontalAvatar: {
+    width: 75,
+    height: 75,
+    borderRadius: 37.5,
+    borderWidth: 3,
+    padding: 3,
+    backgroundColor: 'rgba(26, 10, 46, 0.8)',
+    position: 'relative',
+  },
+  horizontalAvatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 34.5,
+  },
+  horizontalParticipantName: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 8,
+    textAlign: 'center',
   },
   circularParticipantsContainer: {
     width: 300,
@@ -1491,8 +1631,12 @@ const styles = StyleSheet.create({
   },
   crownIconContainer: {
     position: 'absolute',
-    top: -15,
-    zIndex: 10,
+    top: -12,
+    alignSelf: 'center',
+    zIndex: 20,
+    backgroundColor: 'rgba(26, 10, 46, 0.9)',
+    borderRadius: 12,
+    padding: 2,
   },
   circularAvatar: {
     width: 70,
@@ -1532,9 +1676,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   centerPlayButtonContainer: {
-    position: 'absolute',
     justifyContent: 'center',
     alignItems: 'center',
+    marginTop: 20,
+    zIndex: 5,
   },
   playButton: {
     flexDirection: 'row',
@@ -1870,6 +2015,51 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
+  characterRequiredInfo: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 215, 0, 0.3)',
+    marginBottom: 20,
+    gap: 12,
+  },
+  characterRequiredText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#FFD700',
+    lineHeight: 20,
+  },
+  sectionLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#A855F7',
+    marginBottom: 8,
+    marginTop: 16,
+  },
+  sectionDescription: {
+    fontSize: 13,
+    color: '#999',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#444',
+  },
+  dividerText: {
+    color: '#888',
+    fontSize: 14,
+    fontWeight: '600',
+    marginHorizontal: 16,
+  },
   existingCharacterCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1923,7 +2113,6 @@ const styles = StyleSheet.create({
   createNewCharacterButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor: 'rgba(124, 58, 237, 0.2)',
     padding: 20,
     borderRadius: 12,
@@ -1935,8 +2124,13 @@ const styles = StyleSheet.create({
   },
   createNewCharacterText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#A855F7',
+  },
+  createNewCharacterSubtext: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 4,
   },
   characterImageSection: {
     marginBottom: 24,

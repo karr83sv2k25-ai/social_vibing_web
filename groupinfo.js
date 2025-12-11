@@ -75,6 +75,7 @@ const RenderMessages = memo(({
   handleJoinVoiceChat,
   handleJoinScreeningRoom,
   handleJoinRoleplay,
+  handleProfilePress,
   navigation,
   communityId,
   community,
@@ -105,6 +106,7 @@ const RenderMessages = memo(({
           handleJoinVoiceChat={handleJoinVoiceChat}
           handleJoinScreeningRoom={handleJoinScreeningRoom}
           handleJoinRoleplay={handleJoinRoleplay}
+          handleProfilePress={handleProfilePress}
           navigation={navigation}
           communityId={communityId}
           community={community}
@@ -117,7 +119,7 @@ const RenderMessages = memo(({
       );
     });
   }, [messages, currentUserId, currentUser, playingVideoId, playingVoiceId, 
-      navigation, communityId, community, groupTitle, voiceSound, handleJoinVoiceChat, handleJoinScreeningRoom, handleJoinRoleplay]);
+      navigation, communityId, community, groupTitle, voiceSound, handleJoinVoiceChat, handleJoinScreeningRoom, handleJoinRoleplay, handleProfilePress]);
   
   return <>{messageElements}</>;
 });
@@ -134,6 +136,7 @@ const MessageRow = memo(({
   handleJoinVoiceChat,
   handleJoinScreeningRoom,
   handleJoinRoleplay,
+  handleProfilePress,
   navigation,
   communityId,
   community,
@@ -151,10 +154,15 @@ const MessageRow = memo(({
       ]}
     >
       {!isCurrentUser && (
-        <Image
-          source={msg.profileImage ? { uri: msg.profileImage } : require('./assets/a1.png')}
-          style={styles.profilePic}
-        />
+        <TouchableOpacity 
+          onPress={() => handleProfilePress(msg.senderId)}
+          activeOpacity={0.7}
+        >
+          <Image
+            source={msg.profileImage ? { uri: msg.profileImage } : require('./assets/a1.png')}
+            style={styles.profilePic}
+          />
+        </TouchableOpacity>
       )}
       <View 
         style={[
@@ -299,15 +307,8 @@ const MessageRow = memo(({
           <TouchableOpacity
             style={styles.roleplayMessageContainer}
             onPress={() => {
-              if (msg.participants?.includes(currentUser?.id)) {
-                navigation.navigate('RoleplayScreen', {
-                  communityId: communityId,
-                  sessionId: msg.sessionId,
-                  groupTitle: community?.name || groupTitle || 'Roleplay',
-                });
-              } else {
-                handleJoinRoleplay(msg.id, msg.sessionId, msg.roles || [], msg.participants || []);
-              }
+              // Always show mini screens for joining - user needs to select/create character
+              handleJoinRoleplay(msg.id, msg.sessionId, msg.roles || [], msg.participants || []);
             }}
             activeOpacity={0.7}
           >
@@ -412,6 +413,39 @@ const MessageRow = memo(({
               </View>
             )}
 
+            {/* Display Participants with Avatars */}
+            {msg.participantsDetails && msg.participantsDetails.length > 0 && (
+              <View style={styles.roleplayParticipantsAvatars}>
+                <Text style={styles.roleplayParticipantsLabel}>Players:</Text>
+                <View style={styles.participantsAvatarRow}>
+                  {msg.participantsDetails.slice(0, 7).map((participant, index) => {
+                    const isCreator = participant.userId === msg.senderId;
+                    
+                    return (
+                      <View key={index} style={styles.participantAvatarContainer}>
+                        {isCreator && (
+                          <View style={styles.crownBadge}>
+                            <Ionicons name="crown" size={12} color="#FFD700" />
+                          </View>
+                        )}
+                        <Image
+                          source={{ 
+                            uri: participant.profileImage || 'https://via.placeholder.com/50' 
+                          }}
+                          style={styles.participantAvatar}
+                        />
+                      </View>
+                    );
+                  })}
+                  {msg.participantsDetails.length > 7 && (
+                    <View style={styles.moreParticipants}>
+                      <Text style={styles.moreParticipantsText}>+{msg.participantsDetails.length - 7}</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            )}
+
             <View style={styles.roleplayStats}>
               <Text style={styles.roleplayParticipants}>
                 🎭 {msg.participants?.length || 1} {msg.participants?.length === 1 ? 'player' : 'players'}
@@ -423,7 +457,7 @@ const MessageRow = memo(({
             {msg.participants?.includes(currentUser?.id) ? (
               <View style={styles.joinedRoleplayBadge}>
                 <Ionicons name="checkmark-circle" size={18} color="#FFD700" />
-                <Text style={styles.joinedRoleplayText}>You're in - Tap to view</Text>
+                <Text style={styles.joinedRoleplayText}>Tap to Join/Continue</Text>
               </View>
             ) : (
               <View style={styles.joinRoleplayButton}>
@@ -674,6 +708,14 @@ export default function GroupInfoScreen() {
   const [nextRoleId, setNextRoleId] = useState(2);
   const [showRoleSelectModal, setShowRoleSelectModal] = useState(false);
   const [selectedRoleplayToJoin, setSelectedRoleplayToJoin] = useState(null);
+  const [customRoleName, setCustomRoleName] = useState('');
+  const [customRoleDescription, setCustomRoleDescription] = useState('');
+  const [showCustomRoleInput, setShowCustomRoleInput] = useState(false);
+  
+  // Character selection for joining roleplay
+  const [showCharacterSelectorForJoin, setShowCharacterSelectorForJoin] = useState(false);
+  const [selectedCharacterForRoleplay, setSelectedCharacterForRoleplay] = useState(null);
+  const [pendingRoleplayJoin, setPendingRoleplayJoin] = useState(null); // Store messageId, sessionId, roles
   
   // Feature selection modal
   const [showFeatureModal, setShowFeatureModal] = useState(false);
@@ -3050,22 +3092,65 @@ export default function GroupInfoScreen() {
       // Update local state
       setCharacterCollection(updatedCollection);
 
-      // Reset form and go to collection page
-      setCharacterAvatar('');
-      setCharacterName('');
-      setCharacterSubtitle('');
-      setCharacterThemeColor('#FFD700');
-      setCharacterGender('');
-      setCharacterLanguage('English');
-      setCharacterTags([]);
-      setCharacterAge('');
-      setCharacterHeight('');
-      setCharacterDescription('');
-      setCharacterGreeting('');
-      setEditingCharacterId(null);
-      setRoleplayPage(5);
+      // Check if this character creation was for joining a roleplay
+      if (pendingRoleplayJoin) {
+        // User was creating character to join roleplay
+        const createdCharacter = editingCharacterId 
+          ? updatedCollection.find(c => c.id === editingCharacterId)
+          : updatedCollection[updatedCollection.length - 1];
+        
+        // Close roleplay creation screen
+        setShowMiniScreen(null);
+        setRoleplayPage(1);
+        
+        // Reset form
+        setCharacterAvatar('');
+        setCharacterName('');
+        setCharacterSubtitle('');
+        setCharacterThemeColor('#FFD700');
+        setCharacterGender('');
+        setCharacterLanguage('English');
+        setCharacterTags([]);
+        setCharacterAge('');
+        setCharacterHeight('');
+        setCharacterDescription('');
+        setCharacterGreeting('');
+        setEditingCharacterId(null);
+        
+        // Set selected character and proceed to role selection
+        setSelectedCharacterForRoleplay(createdCharacter);
+        
+        Alert.alert(
+          'Character Created!',
+          `"${createdCharacter.name}" is ready! Now select a role for this roleplay.`,
+          [
+            {
+              text: 'Choose Role',
+              onPress: () => {
+                proceedToRoleSelection();
+              }
+            }
+          ]
+        );
+      } else {
+        // Normal character creation for roleplay session
+        // Reset form and go to collection page
+        setCharacterAvatar('');
+        setCharacterName('');
+        setCharacterSubtitle('');
+        setCharacterThemeColor('#FFD700');
+        setCharacterGender('');
+        setCharacterLanguage('English');
+        setCharacterTags([]);
+        setCharacterAge('');
+        setCharacterHeight('');
+        setCharacterDescription('');
+        setCharacterGreeting('');
+        setEditingCharacterId(null);
+        setRoleplayPage(5);
 
-      Alert.alert('Success', editingCharacterId ? 'Character updated!' : 'Character saved!');
+        Alert.alert('Success', editingCharacterId ? 'Character updated!' : 'Character saved!');
+      }
     } catch (error) {
       console.log('Error saving character:', error);
       Alert.alert('Error', 'Failed to save character: ' + error.message);
@@ -3102,6 +3187,73 @@ export default function GroupInfoScreen() {
     }
 
     try {
+      // Check if we're joining an existing roleplay or creating a new one
+      if (pendingRoleplayJoin) {
+        // Join existing roleplay with selected character(s)
+        const { messageId, sessionId } = pendingRoleplayJoin;
+        const now = new Date().toISOString();
+
+        const sessionRef = doc(db, 'roleplay_sessions', communityId, 'sessions', sessionId);
+        const messageRef = doc(db, 'community_chats', communityId, 'messages', messageId);
+
+        // Get current session data
+        const sessionSnap = await getDoc(sessionRef);
+        if (!sessionSnap.exists()) {
+          Alert.alert('Error', 'Roleplay session no longer exists');
+          return;
+        }
+
+        const sessionData = sessionSnap.data();
+
+        // Add user as participant with their selected character(s)
+        const newParticipant = {
+          userId: currentUser.id,
+          userName: currentUser.name,
+          profileImage: currentUser.profileImage,
+          joinedAt: now,
+          characters: selectedCharactersForSession.map(c => c.id),
+        };
+
+        // Update session with new participant and characters
+        await updateDoc(sessionRef, {
+          participants: arrayUnion(newParticipant),
+          characters: arrayUnion(...selectedCharactersForSession.map(char => ({
+            ...char,
+            ownerId: currentUser.id,
+            ownerName: currentUser.name,
+            available: true,
+          }))),
+          updatedAt: now,
+        });
+
+        // Update message
+        await updateDoc(messageRef, {
+          participants: arrayUnion(currentUser.id),
+          participantsDetails: arrayUnion({
+            userId: currentUser.id,
+            userName: currentUser.name,
+            profileImage: currentUser.profileImage,
+          }),
+          availableCharacters: (sessionData.characters?.length || 0) + selectedCharactersForSession.length,
+        });
+
+        // Clear state
+        setSelectedCharactersForSession([]);
+        setPendingRoleplayJoin(null);
+        setRoleplayPage(1);
+
+        // Navigate to RoleplayScreen
+        navigation.navigate('RoleplayScreen', {
+          communityId: communityId,
+          sessionId: sessionId,
+          groupTitle: community?.name || groupTitle || 'Roleplay',
+          myCharacters: selectedCharactersForSession,
+        });
+
+        return;
+      }
+
+      // Create new roleplay session
       // db is now imported globally
       const sessionId = Date.now().toString();
       const now = new Date().toISOString();
@@ -3161,6 +3313,11 @@ export default function GroupInfoScreen() {
           ownerName: currentUser.name,
         })),
         participants: [currentUser.id],
+        participantsDetails: [{
+          userId: currentUser.id,
+          userName: currentUser.name,
+          profileImage: currentUser.profileImage,
+        }],
         isActive: true,
         availableCharacters: selectedCharactersForSession.length,
       };
@@ -3204,28 +3361,36 @@ export default function GroupInfoScreen() {
       const sessionData = sessionSnap.data();
       const availableRoles = (sessionData.roles || []).filter(r => !r.taken);
 
-      // Support both array of strings and array of objects
-      const hasUser3 = Array.isArray(currentParticipants) && currentParticipants.length > 0 &&
-        (typeof currentParticipants[0] === 'string'
-          ? currentParticipants.includes(currentUser.id)
-          : currentParticipants.some(p => p.userId === currentUser.id));
-      if (hasUser3) {
-        Alert.alert('Already Joined', 'You are already in this roleplay session!');
-        return;
-      }
-
-      if (availableRoles.length === 0) {
-        Alert.alert('No Roles Available', 'All roles have been taken in this roleplay session.');
-        return;
-      }
-
-      // Show role selection modal
-      setSelectedRoleplayToJoin({ messageId, sessionId, availableRoles });
-      setShowRoleSelectModal(true);
+      // Check if user already has characters in this session
+      const userCharacters = (sessionData.characters || []).filter(
+        char => char.ownerId === currentUser.id
+      );
+      
+      // If user has characters, they can rejoin - but still need to select character via mini screen
+      // Always show mini screens - user must select/create character to join
+      
+      // Store roleplay join details for later use
+      setPendingRoleplayJoin({ messageId, sessionId, availableRoles });
+      
+      // Directly show mini screens for roleplay
+      setShowMiniScreen('roleplay');
+      setRoleplayPage(1); // Start at character creation page
     } catch (e) {
       console.log('Error joining roleplay:', e);
       Alert.alert('Error', 'Failed to join roleplay session: ' + e.message);
     }
+  };
+
+  // After character is selected, proceed to roleplay mini screens
+  const proceedToRoleSelection = () => {
+    if (!pendingRoleplayJoin) return;
+    
+    // Close character selector
+    setShowCharacterSelectorForJoin(false);
+    
+    // Show mini screen with roleplay character creation/selection
+    setShowMiniScreen('roleplay');
+    setRoleplayPage(1); // Start at character creation page
   };
 
   const confirmRoleSelection = async (selectedRole) => {
@@ -3286,6 +3451,84 @@ export default function GroupInfoScreen() {
     } catch (e) {
       console.log('Error confirming role:', e);
       Alert.alert('Error', 'Failed to join with selected role: ' + e.message);
+    }
+  };
+
+  const createAndJoinCustomRole = async () => {
+    if (!customRoleName.trim()) {
+      Alert.alert('Error', 'Please enter a role name');
+      return;
+    }
+
+    if (!selectedRoleplayToJoin) return;
+
+    const { messageId, sessionId } = selectedRoleplayToJoin;
+
+    try {
+      // db is now imported globally
+      const sessionRef = doc(db, 'roleplay_sessions', communityId, 'sessions', sessionId);
+      const messageRef = doc(db, 'community_chats', communityId, 'messages', messageId);
+      const now = new Date().toISOString();
+
+      // Get current session data
+      const sessionSnap = await getDoc(sessionRef);
+      const sessionData = sessionSnap.data();
+      
+      // Create new custom role
+      const newRoleId = `custom_${Date.now()}_${currentUser.id}`;
+      const customRole = {
+        id: newRoleId,
+        name: customRoleName.trim(),
+        description: customRoleDescription.trim(),
+        taken: true,
+        takenBy: currentUser.id,
+        takenByName: currentUser.name,
+        isCustom: true,
+      };
+
+      // Add custom role to roles array
+      const updatedRoles = [...(sessionData.roles || []), customRole];
+
+      // Update session
+      await updateDoc(sessionRef, {
+        participants: arrayUnion({
+          userId: currentUser.id,
+          userName: currentUser.name,
+          profileImage: currentUser.profileImage,
+          joinedAt: now,
+          role: customRole.name,
+          roleId: customRole.id,
+        }),
+        roles: updatedRoles,
+        updatedAt: now,
+      });
+
+      // Update message
+      const availableRolesCount = updatedRoles.filter(r => !r.taken).length;
+      await updateDoc(messageRef, {
+        participants: arrayUnion(currentUser.id),
+        roles: updatedRoles,
+        availableRoles: availableRolesCount,
+      });
+
+      // Reset custom role inputs
+      setCustomRoleName('');
+      setCustomRoleDescription('');
+      setShowCustomRoleInput(false);
+      setShowRoleSelectModal(false);
+      setSelectedRoleplayToJoin(null);
+      
+      // Navigate to RoleplayScreen
+      navigation.navigate('RoleplayScreen', {
+        communityId: communityId,
+        sessionId: sessionId,
+        groupTitle: community?.name || groupTitle || 'Roleplay',
+        selectedRole: customRole,
+      });
+      
+    } catch (e) {
+      console.log('Error creating custom role:', e);
+      Alert.alert('Error', 'Failed to create custom role: ' + e.message);
     }
   };
 
@@ -3517,6 +3760,13 @@ export default function GroupInfoScreen() {
     setShowCommentModal(true);
     // Fetch comments for this post
     fetchCommentsForPost(post);
+  };
+
+  // Navigate to user profile when clicking on profile icon
+  const handleProfilePress = (userId) => {
+    if (userId && userId !== currentUser?.id) {
+      navigation.navigate('Profile', { userId });
+    }
   };
 
   // Fetch comments for a specific post
@@ -4720,6 +4970,7 @@ export default function GroupInfoScreen() {
                           handleJoinVoiceChat={handleJoinVoiceChat}
                           handleJoinScreeningRoom={handleJoinScreeningRoom}
                           handleJoinRoleplay={handleJoinRoleplay}
+                          handleProfilePress={handleProfilePress}
                           navigation={navigation}
                           communityId={communityId}
                           community={community}
@@ -5966,6 +6217,149 @@ export default function GroupInfoScreen() {
         </View>
       </Modal>
 
+      {/* Character Selector Modal for Joining Roleplay */}
+      <Modal
+        visible={showCharacterSelectorForJoin}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => {
+          Alert.alert(
+            'Character Required',
+            'You need to select or create a character to join this roleplay. Do you want to cancel?',
+            [
+              { text: 'Continue', style: 'cancel' },
+              {
+                text: 'Cancel Join',
+                style: 'destructive',
+                onPress: () => {
+                  setShowCharacterSelectorForJoin(false);
+                  setPendingRoleplayJoin(null);
+                  setSelectedCharacterForRoleplay(null);
+                }
+              }
+            ]
+          );
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.characterSelectorModal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Your Character</Text>
+              <TouchableOpacity onPress={() => {
+                Alert.alert(
+                  'Character Required',
+                  'You need to select or create a character to join this roleplay. Do you want to cancel?',
+                  [
+                    { text: 'Continue', style: 'cancel' },
+                    {
+                      text: 'Cancel Join',
+                      style: 'destructive',
+                      onPress: () => {
+                        setShowCharacterSelectorForJoin(false);
+                        setPendingRoleplayJoin(null);
+                        setSelectedCharacterForRoleplay(null);
+                      }
+                    }
+                  ]
+                );
+              }}>
+                <Ionicons name="close" size={28} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.characterSelectorContent}>
+              {/* Info Banner */}
+              <View style={styles.characterInfoBanner}>
+                <MaterialCommunityIcons name="drama-masks" size={24} color="#FFD700" />
+                <Text style={styles.characterInfoText}>
+                  Choose a character to join this roleplay. You'll appear with your character's name, image, and colors - not your real profile!
+                </Text>
+              </View>
+
+              {/* Existing Characters */}
+              {characterCollection && characterCollection.length > 0 && (
+                <>
+                  <Text style={styles.characterSectionTitle}>Your Characters</Text>
+                  <Text style={styles.characterSectionSubtitle}>Select an existing character</Text>
+                  
+                  {characterCollection.map((character, index) => (
+                    <TouchableOpacity
+                      key={index}
+                      style={styles.characterCard}
+                      onPress={() => {
+                        setSelectedCharacterForRoleplay(character);
+                        proceedToRoleSelection();
+                      }}
+                    >
+                      {character.avatar ? (
+                        <Image
+                          source={{ uri: character.avatar }}
+                          style={styles.characterCardAvatar}
+                        />
+                      ) : (
+                        <View style={[styles.characterCardAvatar, { backgroundColor: character.themeColor || '#FFD700' }]}>
+                          <MaterialCommunityIcons name="account" size={40} color="#fff" />
+                        </View>
+                      )}
+                      
+                      <View style={styles.characterCardInfo}>
+                        <Text style={styles.characterCardName}>{character.name}</Text>
+                        {character.subtitle && (
+                          <Text style={styles.characterCardSubtitle}>{character.subtitle}</Text>
+                        )}
+                        <View style={styles.characterCardTags}>
+                          {character.tags && character.tags.slice(0, 3).map((tag, idx) => (
+                            <View key={idx} style={styles.characterTag}>
+                              <Text style={styles.characterTagText}>{tag}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+                      
+                      <Ionicons name="chevron-forward" size={24} color="#999" />
+                    </TouchableOpacity>
+                  ))}
+
+                  <View style={styles.dividerContainer}>
+                    <View style={styles.dividerLine} />
+                    <Text style={styles.dividerText}>OR</Text>
+                    <View style={styles.dividerLine} />
+                  </View>
+                </>
+              )}
+
+              {/* Create New Character */}
+              <Text style={styles.characterSectionTitle}>
+                {characterCollection && characterCollection.length > 0 ? 'Create New Character' : 'Get Started'}
+              </Text>
+              <Text style={styles.characterSectionSubtitle}>
+                {characterCollection && characterCollection.length > 0 
+                  ? 'Design a brand new character for this roleplay'
+                  : 'Create your first character to join the roleplay'}
+              </Text>
+
+              <TouchableOpacity
+                style={styles.createCharacterButton}
+                onPress={() => {
+                  // Close this modal and show roleplay character creation
+                  setShowCharacterSelectorForJoin(false);
+                  setShowMiniScreen('roleplay');
+                  setRoleplayPage(1);
+                }}
+              >
+                <MaterialCommunityIcons name="plus-circle" size={32} color="#A855F7" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.createCharacterButtonText}>Create New Character</Text>
+                  <Text style={styles.createCharacterButtonSubtext}>
+                    Customize name, image, colors, and personality
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       {/* Role Selection Modal */}
       <Modal
         visible={showRoleSelectModal}
@@ -5974,6 +6368,9 @@ export default function GroupInfoScreen() {
         onRequestClose={() => {
           setShowRoleSelectModal(false);
           setSelectedRoleplayToJoin(null);
+          setShowCustomRoleInput(false);
+          setCustomRoleName('');
+          setCustomRoleDescription('');
         }}
       >
         <View style={styles.modalOverlay}>
@@ -5983,31 +6380,110 @@ export default function GroupInfoScreen() {
               <TouchableOpacity onPress={() => {
                 setShowRoleSelectModal(false);
                 setSelectedRoleplayToJoin(null);
+                setShowCustomRoleInput(false);
+                setCustomRoleName('');
+                setCustomRoleDescription('');
               }}>
                 <Ionicons name="close" size={28} color="#fff" />
               </TouchableOpacity>
             </View>
 
             <ScrollView style={styles.roleSelectContent}>
-              {selectedRoleplayToJoin?.availableRoles.map((role) => (
+              {selectedRoleplayToJoin?.availableRoles && selectedRoleplayToJoin.availableRoles.length > 0 ? (
+                <>
+                  {selectedRoleplayToJoin.availableRoles.map((role) => (
+                    <TouchableOpacity
+                      key={role.id}
+                      style={styles.roleSelectCard}
+                      onPress={() => {
+                        // Close role selector modal and open character creation
+                        setShowRoleSelectModal(false);
+                        setShowMiniScreen('roleplay');
+                        setRoleplayPage(1);
+                      }}
+                    >
+                      <View style={styles.roleSelectHeader}>
+                        <MaterialCommunityIcons name="drama-masks" size={32} color="#FFD700" />
+                        <Text style={styles.roleSelectName}>{role.name}</Text>
+                      </View>
+                      {role.description && (
+                        <Text style={styles.roleSelectDescription}>{role.description}</Text>
+                      )}
+                      <View style={styles.roleSelectButton}>
+                        <Ionicons name="person-add" size={18} color="#000" />
+                        <Text style={styles.roleSelectButtonText}>Select This Role</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                  <View style={styles.dividerContainer}>
+                    <View style={styles.dividerLine} />
+                    <Text style={styles.dividerText}>OR</Text>
+                    <View style={styles.dividerLine} />
+                  </View>
+                </>
+              ) : (
+                <View style={styles.noRolesContainer}>
+                  <MaterialCommunityIcons name="drama-masks" size={48} color="#666" />
+                  <Text style={styles.noRolesText}>All predefined roles are taken</Text>
+                  <Text style={styles.noRolesSubtext}>Create your own custom role to join!</Text>
+                </View>
+              )}
+
+              {/* Custom Role Creation Section */}
+              {!showCustomRoleInput ? (
                 <TouchableOpacity
-                  key={role.id}
-                  style={styles.roleSelectCard}
-                  onPress={() => confirmRoleSelection(role)}
+                  style={styles.createCustomRoleButton}
+                  onPress={() => setShowCustomRoleInput(true)}
                 >
-                  <View style={styles.roleSelectHeader}>
-                    <MaterialCommunityIcons name="drama-masks" size={32} color="#FFD700" />
-                    <Text style={styles.roleSelectName}>{role.name}</Text>
-                  </View>
-                  {role.description && (
-                    <Text style={styles.roleSelectDescription}>{role.description}</Text>
-                  )}
-                  <View style={styles.roleSelectButton}>
-                    <Ionicons name="person-add" size={18} color="#000" />
-                    <Text style={styles.roleSelectButtonText}>Select This Role</Text>
-                  </View>
+                  <Ionicons name="add-circle" size={24} color="#FFD700" />
+                  <Text style={styles.createCustomRoleText}>Create Custom Role</Text>
                 </TouchableOpacity>
-              ))}
+              ) : (
+                <View style={styles.customRoleInputContainer}>
+                  <Text style={styles.customRoleTitle}>Create Your Custom Role</Text>
+                  
+                  <TextInput
+                    style={styles.customRoleInput}
+                    placeholder="Role Name (e.g., Wandering Merchant)"
+                    placeholderTextColor="#666"
+                    value={customRoleName}
+                    onChangeText={setCustomRoleName}
+                    maxLength={50}
+                  />
+                  
+                  <TextInput
+                    style={[styles.customRoleInput, styles.customRoleDescInput]}
+                    placeholder="Role Description (optional)"
+                    placeholderTextColor="#666"
+                    value={customRoleDescription}
+                    onChangeText={setCustomRoleDescription}
+                    multiline
+                    numberOfLines={3}
+                    maxLength={200}
+                  />
+
+                  <View style={styles.customRoleButtonsRow}>
+                    <TouchableOpacity
+                      style={styles.cancelCustomRoleButton}
+                      onPress={() => {
+                        setShowCustomRoleInput(false);
+                        setCustomRoleName('');
+                        setCustomRoleDescription('');
+                      }}
+                    >
+                      <Text style={styles.cancelCustomRoleText}>Cancel</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.confirmCustomRoleButton}
+                      onPress={createAndJoinCustomRole}
+                    >
+                      <Ionicons name="checkmark-circle" size={20} color="#000" />
+                      <Text style={styles.confirmCustomRoleText}>Create & Join</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
             </ScrollView>
           </View>
         </View>
@@ -6094,6 +6570,7 @@ export default function GroupInfoScreen() {
                 style={styles.featureCard}
                 onPress={() => {
                   setShowFeatureModal(false);
+                  setPendingRoleplayJoin(null); // Clear pending join info for new roleplay
                   setShowMiniScreen('roleplay');
                   setRoleplayPage(1);
                 }}
@@ -6211,6 +6688,7 @@ export default function GroupInfoScreen() {
         transparent={true}
         onRequestClose={() => {
           setShowMiniScreen(null);
+          setPendingRoleplayJoin(null); // Reset pending join info
           setRoleplayPage(1);
           setCharacterName('');
           setCharacterGender('');
@@ -6230,6 +6708,7 @@ export default function GroupInfoScreen() {
                   if (roleplayPage === 1) {
                     // On page 1 (choice screen), close modal
                     setShowMiniScreen(null);
+                    setPendingRoleplayJoin(null); // Reset pending join info
                     setRoleplayPage(1);
                     setCharacterAvatar('');
                     setCharacterName('');
@@ -6289,8 +6768,14 @@ export default function GroupInfoScreen() {
                     <View style={styles.featureIconContainer}>
                       <Ionicons name="people" size={60} color="#FFD700" />
                     </View>
-                    <Text style={styles.roleplayPageTitle}>Start Roleplay</Text>
-                    <Text style={styles.roleplayPageDesc}>Choose how you want to begin your roleplay session</Text>
+                    <Text style={styles.roleplayPageTitle}>
+                      {pendingRoleplayJoin ? 'Join Roleplay' : 'Start Roleplay'}
+                    </Text>
+                    <Text style={styles.roleplayPageDesc}>
+                      {pendingRoleplayJoin 
+                        ? 'Choose a character to join this roleplay session' 
+                        : 'Choose how you want to begin your roleplay session'}
+                    </Text>
                     
                     <TouchableOpacity
                       style={styles.roleplayChoiceButton}
@@ -6817,7 +7302,7 @@ export default function GroupInfoScreen() {
                   </TouchableOpacity>
                 )}
 
-                {/* Page 5: Start roleplay button when characters selected */}
+                {/* Page 5: Start/Join roleplay button when characters selected */}
                 {roleplayPage === 5 && selectedCharactersForSession.length > 0 && (
                   <TouchableOpacity
                     style={[styles.miniScreenButton, styles.startButton]}
@@ -6826,7 +7311,9 @@ export default function GroupInfoScreen() {
                       startRoleplayWithCharacters();
                     }}
                   >
-                    <Text style={styles.miniScreenButtonText}>Start Roleplay Session</Text>
+                    <Text style={styles.miniScreenButtonText}>
+                      {pendingRoleplayJoin ? 'Join Roleplay Session' : 'Start Roleplay Session'}
+                    </Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -7774,6 +8261,61 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     gap: 12,
   },
+  roleplayParticipantsAvatars: {
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  roleplayParticipantsLabel: {
+    color: '#FFD700',
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  participantsAvatarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: -8,
+  },
+  participantAvatarContainer: {
+    position: 'relative',
+  },
+  participantAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#1a1a1a',
+    backgroundColor: '#333',
+  },
+  crownBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFD700',
+    zIndex: 10,
+  },
+  moreParticipants: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#333',
+    borderWidth: 2,
+    borderColor: '#1a1a1a',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  moreParticipantsText: {
+    color: '#FFD700',
+    fontSize: 11,
+    fontWeight: '700',
+  },
   roleplayParticipants: {
     color: '#FFD700',
     fontSize: 13,
@@ -8002,6 +8544,222 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#000',
+  },
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#444',
+  },
+  dividerText: {
+    color: '#888',
+    fontSize: 14,
+    fontWeight: '600',
+    marginHorizontal: 12,
+  },
+  noRolesContainer: {
+    alignItems: 'center',
+    paddingVertical: 30,
+    paddingHorizontal: 20,
+  },
+  noRolesText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#888',
+    marginTop: 12,
+  },
+  noRolesSubtext: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  createCustomRoleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2a2a2a',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#FFD700',
+    borderStyle: 'dashed',
+    gap: 10,
+  },
+  createCustomRoleText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFD700',
+  },
+  customRoleInputContainer: {
+    backgroundColor: '#2a2a2a',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 2,
+    borderColor: '#FFD700',
+  },
+  customRoleTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFD700',
+    marginBottom: 12,
+  },
+  customRoleInput: {
+    backgroundColor: '#1e1e1e',
+    borderRadius: 8,
+    padding: 12,
+    color: '#fff',
+    fontSize: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#444',
+  },
+  customRoleDescInput: {
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  customRoleButtonsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
+  },
+  cancelCustomRoleButton: {
+    flex: 1,
+    backgroundColor: '#444',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelCustomRoleText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  confirmCustomRoleButton: {
+    flex: 2,
+    flexDirection: 'row',
+    backgroundColor: '#FFD700',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  confirmCustomRoleText: {
+    color: '#000',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  // Character Selector Modal Styles
+  characterSelectorModal: {
+    width: '90%',
+    maxHeight: '80%',
+    backgroundColor: '#1e1e1e',
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  characterSelectorContent: {
+    padding: 16,
+  },
+  characterInfoBanner: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 215, 0, 0.3)',
+    marginBottom: 20,
+    gap: 12,
+  },
+  characterInfoText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#FFD700',
+    lineHeight: 20,
+  },
+  characterSectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#A855F7',
+    marginBottom: 6,
+  },
+  characterSectionSubtitle: {
+    fontSize: 13,
+    color: '#999',
+    marginBottom: 12,
+  },
+  characterCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2a2a2a',
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(168, 85, 247, 0.3)',
+  },
+  characterCardAvatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    marginRight: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  characterCardInfo: {
+    flex: 1,
+  },
+  characterCardName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  characterCardSubtitle: {
+    fontSize: 13,
+    color: '#999',
+    marginBottom: 6,
+  },
+  characterCardTags: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  characterTag: {
+    backgroundColor: 'rgba(168, 85, 247, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  characterTagText: {
+    fontSize: 11,
+    color: '#A855F7',
+  },
+  createCharacterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(124, 58, 237, 0.2)',
+    padding: 18,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: '#A855F7',
+    gap: 12,
+  },
+  createCharacterButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#A855F7',
+  },
+  createCharacterButtonSubtext: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 4,
   },
   recordingReadyIndicator: {
     flexDirection: 'row',

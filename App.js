@@ -131,6 +131,7 @@ export default function App() {
   React.useEffect(() => {
     const auth = getAuth(firebaseApp);
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      console.log('🔐 Auth state changed:', user ? `User logged in: ${user.email}` : 'No user logged in');
       setUser(user);
       if (initializing) setInitializing(false);
     });
@@ -142,13 +143,14 @@ export default function App() {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1a1a2e' }}>
         <ActivityIndicator size="large" color="#8B2EF0" />
+        <Text style={{ color: '#8B2EF0', marginTop: 10, fontSize: 16 }}>Loading...</Text>
       </View>
     );
   }
 
   return (
     <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName={user ? 'Home' : 'Login'}>
+      <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName={user ? 'TabBar' : 'Login'}>
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Signup" component={SignupScreen} />
         <Stack.Screen name="WithPhone" component={WithPhoneScreen} />

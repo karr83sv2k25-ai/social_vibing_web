@@ -122,7 +122,14 @@ service cloud.firestore {
     // Users collection
     match /users/{userId} {
       allow read: if isSignedIn();
-      allow write: if isOwner(userId);
+      allow create: if isOwner(userId);
+      // Allow user to update their own profile
+      allow update: if isOwner(userId);
+      // Also allow updating followersCount and followingCount fields by authenticated users
+      // This is needed when someone follows/unfollows another user
+      allow update: if isSignedIn() && 
+                      request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['followersCount', 'followingCount']);
     }
     
     // Community chats
