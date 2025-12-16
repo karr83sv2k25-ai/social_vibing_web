@@ -34,6 +34,7 @@ import {
   Share,
   Keyboard,
   InteractionManager,
+  RefreshControl,
 } from 'react-native';
 
 import { Ionicons, Entypo, AntDesign, MaterialIcons, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -158,10 +159,16 @@ const MessageRow = memo(({
           onPress={() => handleProfilePress(msg.senderId)}
           activeOpacity={0.7}
         >
-          <Image
-            source={msg.profileImage ? { uri: msg.profileImage } : require('./assets/a1.png')}
-            style={styles.profilePic}
-          />
+          {msg.profileImage ? (
+            <Image
+              source={{ uri: msg.profileImage }}
+              style={styles.profilePic}
+            />
+          ) : (
+            <View style={[styles.profilePic, { backgroundColor: '#E1E8ED', justifyContent: 'center', alignItems: 'center' }]}>
+              <Ionicons name="person" size={24} color="#657786" />
+            </View>
+          )}
         </TouchableOpacity>
       )}
       <View 
@@ -468,6 +475,48 @@ const MessageRow = memo(({
           </TouchableOpacity>
         )}
 
+        {/* Community Invite Message */}
+        {msg.type === 'community_invite' && (
+          <TouchableOpacity
+            style={styles.communityInviteContainer}
+            onPress={() => {
+              // Navigate to the community
+              if (msg.communityId) {
+                navigation.navigate('GroupInfo', {
+                  communityId: msg.communityId,
+                  groupTitle: msg.communityName || 'Community'
+                });
+              }
+            }}
+            activeOpacity={0.8}
+          >
+            <View style={styles.communityInviteHeader}>
+              <MaterialIcons name="groups" size={24} color="#8B2EF0" />
+              <Text style={styles.communityInviteTitle}>Community Invitation</Text>
+            </View>
+            
+            {msg.communityImage && (
+              <Image
+                source={{ uri: msg.communityImage }}
+                style={styles.communityInviteImage}
+                resizeMode="cover"
+              />
+            )}
+            
+            <View style={styles.communityInviteContent}>
+              <Text style={styles.communityInviteName}>{msg.communityName}</Text>
+              <Text style={styles.communityInviteText}>
+                {msg.sender} invites you to join this community! 🎉
+              </Text>
+            </View>
+            
+            <View style={styles.communityInviteButton}>
+              <MaterialIcons name="login" size={18} color="#fff" />
+              <Text style={styles.communityInviteButtonText}>Tap to Join</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+
         {/* Voice Message */}
         {msg.voiceUrl && msg.type !== 'voiceChat' && !isVoiceRoomType(msg.type) && (
           <View style={styles.chatVoiceContainer}>
@@ -606,7 +655,8 @@ export default function GroupInfoScreen() {
     }, [communityId, currentUser]);
   const navigation = useNavigation();
   const route = useRoute();
-  const { communityId, groupTitle } = route.params || {};
+  const { communityId, groupTitle, openCharacterSelector, roleplaySessionId, returnToRoleplay } = route.params || {};
+  const auth = getAuth(firebaseApp);
   const [selectedButton, setSelectedButton] = useState('Explore');
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
@@ -681,6 +731,8 @@ export default function GroupInfoScreen() {
   const [activeTab, setActiveTab] = useState('community');
   const [showAddModal, setShowAddModal] = useState(false);
   const [communitySection, setCommunitySection] = useState('all');
+  const [communityGroups, setCommunityGroups] = useState([]);
+  const [joinedGroupIds, setJoinedGroupIds] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [showBlogModal, setShowBlogModal] = useState(false);
   const [blogTitle, setBlogTitle] = useState('');
@@ -689,6 +741,7 @@ export default function GroupInfoScreen() {
   const [blogs, setBlogs] = useState([]);
   const [posts, setPosts] = useState([]);
   const [allPosts, setAllPosts] = useState([]); // Combined blogs and image posts
+  const [refreshing, setRefreshing] = useState(false);
   const [showImageModal, setShowImageModal] = useState(false);
   const [imageCaption, setImageCaption] = useState('');
   const [selectedImage, setSelectedImage] = useState(null);
@@ -696,6 +749,13 @@ export default function GroupInfoScreen() {
   const [drafts, setDrafts] = useState([]);
   const [showDraftsModal, setShowDraftsModal] = useState(false);
   const [selectedDraft, setSelectedDraft] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [showMembersModal, setShowMembersModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [inviteLink, setInviteLink] = useState('');
+  const [qrCodeValue, setQrCodeValue] = useState('');
+  const [memberSearchQuery, setMemberSearchQuery] = useState('');
   
   // Active audio call state
   const [activeAudioCall, setActiveAudioCall] = useState(null);
@@ -790,6 +850,21 @@ export default function GroupInfoScreen() {
     loadCharacterCollection();
   }, [currentUser]);
 
+  // Handle opening character selector when navigating from RoleplayScreen
+  useEffect(() => {
+    if (openCharacterSelector && roleplaySessionId) {
+      // Set pending roleplay join with session details
+      setPendingRoleplayJoin({ 
+        sessionId: roleplaySessionId,
+        returnToRoleplay: returnToRoleplay 
+      });
+      
+      // Open the mini screen for roleplay character selection
+      setShowMiniScreen('roleplay');
+      setRoleplayPage(1); // Start at character selection page
+    }
+  }, [openCharacterSelector, roleplaySessionId, returnToRoleplay]);
+
   // Fetch community details from Firestore (Real-time)
   useEffect(() => {
     if (!communityId) return;
@@ -825,6 +900,16 @@ export default function GroupInfoScreen() {
             ...data,
               memberCount: memberCount
             });
+            
+            // Check if current user is admin (creator) of this community
+            if (auth.currentUser && data.createdBy === auth.currentUser.uid) {
+              setIsAdmin(true);
+              // Generate invite link
+              setInviteLink(`https://socialvibing.app/community/${communityId}`);
+              setQrCodeValue(`https://socialvibing.app/community/${communityId}`);
+            } else {
+              setIsAdmin(false);
+            }
             
             // Extract member IDs from various possible formats
             let memberIds = [];
@@ -1155,7 +1240,6 @@ export default function GroupInfoScreen() {
   useEffect(() => {
     const fetchCurrentUser = async () => {
       try {
-        const auth = getAuth(firebaseApp);
         // db is now imported globally
         
         // Get currently logged-in user from Firebase Auth
@@ -2202,6 +2286,20 @@ export default function GroupInfoScreen() {
     };
   }, [communityId]);
 
+  // Handle pull-to-refresh
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      // Refresh will be handled automatically by the existing listeners
+      // Just wait a moment for the listeners to update
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    } catch (error) {
+      console.log('Error refreshing posts:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
   // Combine blogs and posts, sort by createdAt
   useEffect(() => {
     const combined = [...blogs, ...posts];
@@ -2253,6 +2351,76 @@ export default function GroupInfoScreen() {
       if (unsubscribe) unsubscribe();
     };
   }, [communityId, currentUser?.id]);
+
+  // Real-time listener for community groups
+  useEffect(() => {
+    if (!communityId) return;
+    
+    let unsubscribe = null;
+    
+    (async () => {
+      try {
+        const firestore = await import('firebase/firestore');
+        const groupsCol = collection(db, 'communities', communityId, 'groups');
+        // Simplified query - just filter by isActive, sort on client side
+        const q = firestore.query(
+          groupsCol,
+          firestore.where('isActive', '==', true)
+        );
+        
+        unsubscribe = firestore.onSnapshot(q, (snapshot) => {
+          const groupsList = snapshot.docs.map((docSnap) => ({
+            id: docSnap.id,
+            ...docSnap.data(),
+          }));
+          
+          // Sort by createdAt on client side
+          groupsList.sort((a, b) => {
+            const aTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+            const bTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
+            return bTime - aTime; // Descending order (newest first)
+          });
+          
+          setCommunityGroups(groupsList);
+          console.log('Community groups loaded:', groupsList.length);
+        }, (error) => {
+          console.error('Error fetching community groups:', error);
+        });
+      } catch (error) {
+        console.error('Error setting up groups listener:', error);
+      }
+    })();
+    
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [communityId]);
+
+  // Check which groups current user has joined
+  useEffect(() => {
+    if (!communityId || !currentUser?.id || communityGroups.length === 0) return;
+    
+    const checkJoinedGroups = async () => {
+      try {
+        const joinedIds = [];
+        
+        for (const group of communityGroups) {
+          const memberRef = doc(db, 'communities', communityId, 'groups', group.id, 'members', currentUser.id);
+          const memberSnap = await getDoc(memberRef);
+          
+          if (memberSnap.exists()) {
+            joinedIds.push(group.id);
+          }
+        }
+        
+        setJoinedGroupIds(joinedIds);
+      } catch (error) {
+        console.error('Error checking joined groups:', error);
+      }
+    };
+    
+    checkJoinedGroups();
+  }, [communityId, currentUser?.id, communityGroups]);
 
   // Fetch activity stats and online members in real-time
   useEffect(() => {
@@ -3190,11 +3358,16 @@ export default function GroupInfoScreen() {
       // Check if we're joining an existing roleplay or creating a new one
       if (pendingRoleplayJoin) {
         // Join existing roleplay with selected character(s)
-        const { messageId, sessionId } = pendingRoleplayJoin;
+        const { messageId, sessionId, returnToRoleplay } = pendingRoleplayJoin;
         const now = new Date().toISOString();
 
+        if (!sessionId) {
+          Alert.alert('Error', 'Invalid session ID');
+          return;
+        }
+
         const sessionRef = doc(db, 'roleplay_sessions', communityId, 'sessions', sessionId);
-        const messageRef = doc(db, 'community_chats', communityId, 'messages', messageId);
+        const messageRef = messageId ? doc(db, 'community_chats', communityId, 'messages', messageId) : null;
 
         // Get current session data
         const sessionSnap = await getDoc(sessionRef);
@@ -3204,40 +3377,124 @@ export default function GroupInfoScreen() {
         }
 
         const sessionData = sessionSnap.data();
+        const isReturningToRoleplay = returnToRoleplay === true;
 
-        // Add user as participant with their selected character(s)
-        const newParticipant = {
-          userId: currentUser.id,
-          userName: currentUser.name,
-          profileImage: currentUser.profileImage,
-          joinedAt: now,
-          characters: selectedCharactersForSession.map(c => c.id),
-        };
+        console.log('Character switch debug:', {
+          isReturningToRoleplay,
+          sessionId,
+          hasMessageId: !!messageId,
+          selectedCharactersCount: selectedCharactersForSession.length,
+          currentUserId: currentUser.id,
+        });
 
-        // Update session with new participant and characters
-        await updateDoc(sessionRef, {
-          participants: arrayUnion(newParticipant),
-          characters: arrayUnion(...selectedCharactersForSession.map(char => ({
-            ...char,
+        // Check if user is already a participant
+        const existingParticipantIndex = (sessionData.participants || []).findIndex(
+          p => p && p.userId === currentUser.id
+        );
+
+        console.log('Existing participant index:', existingParticipantIndex);
+
+        let updatedParticipants = [...(sessionData.participants || [])];
+        let updatedCharacters = [...(sessionData.characters || [])];
+
+        if (isReturningToRoleplay && existingParticipantIndex >= 0) {
+          // User is switching character - update existing participant
+          console.log('Switching character for existing participant');
+          
+          // Remove old characters owned by this user
+          updatedCharacters = updatedCharacters.filter(char => char && char.ownerId !== currentUser.id);
+          
+          console.log('Characters after removing old:', updatedCharacters.length);
+          
+          // Add new selected characters
+          const newCharacters = selectedCharactersForSession.map(char => ({
+            id: char.id || `char_${Date.now()}`,
+            name: char.name || 'Unnamed Character',
+            avatar: char.avatar || char.imageUrl || '',
+            themeColor: char.themeColor || char.frameColor || '#FFD700',
+            description: char.description || '',
             ownerId: currentUser.id,
-            ownerName: currentUser.name,
+            ownerName: currentUser.name || currentUser.displayName || 'User',
             available: true,
-          }))),
-          updatedAt: now,
-        });
+          }));
+          
+          updatedCharacters.push(...newCharacters);
+          console.log('Characters after adding new:', updatedCharacters.length);
 
-        // Update message
-        await updateDoc(messageRef, {
-          participants: arrayUnion(currentUser.id),
-          participantsDetails: arrayUnion({
+          // Update participant's character list
+          updatedParticipants[existingParticipantIndex].characters = selectedCharactersForSession.map(c => c.id);
+          
+          console.log('Updating session with new character data...');
+          
+          // Update session with modified arrays
+          await updateDoc(sessionRef, {
+            participants: updatedParticipants,
+            characters: updatedCharacters,
+            updatedAt: now,
+          });
+          
+          console.log('Session updated successfully');
+
+        } else {
+          // New user joining - add as new participant
+          console.log('Adding new participant to roleplay');
+          
+          const newParticipant = {
             userId: currentUser.id,
-            userName: currentUser.name,
-            profileImage: currentUser.profileImage,
-          }),
-          availableCharacters: (sessionData.characters?.length || 0) + selectedCharactersForSession.length,
-        });
+            userName: currentUser.name || currentUser.displayName || 'User',
+            profileImage: currentUser.profileImage || currentUser.avatar || null,
+            joinedAt: now,
+            characters: selectedCharactersForSession.map(c => c.id || `char_${Date.now()}`),
+          };
+
+          updatedParticipants.push(newParticipant);
+          
+          // Add new characters
+          const newCharacters = selectedCharactersForSession.map(char => ({
+            id: char.id || `char_${Date.now()}`,
+            name: char.name || 'Unnamed Character',
+            avatar: char.avatar || char.imageUrl || '',
+            themeColor: char.themeColor || char.frameColor || '#FFD700',
+            description: char.description || '',
+            ownerId: currentUser.id,
+            ownerName: currentUser.name || currentUser.displayName || 'User',
+            available: true,
+          }));
+          
+          updatedCharacters.push(...newCharacters);
+          
+          console.log('Updating session with new participant...');
+
+          // Update session
+          await updateDoc(sessionRef, {
+            participants: updatedParticipants,
+            characters: updatedCharacters,
+            updatedAt: now,
+          });
+          
+          console.log('Session updated with new participant');
+
+          // Update message (only for new joins and if messageRef exists)
+          if (messageRef && messageId) {
+            try {
+              await updateDoc(messageRef, {
+                participants: arrayUnion(currentUser.id),
+                participantsDetails: arrayUnion({
+                  userId: currentUser.id,
+                  userName: currentUser.name,
+                  profileImage: currentUser.profileImage,
+                }),
+                availableCharacters: updatedCharacters.length,
+              });
+            } catch (msgError) {
+              console.log('Error updating message (non-critical):', msgError);
+              // Continue even if message update fails
+            }
+          }
+        }
 
         // Clear state
+        const wasReturningToRoleplay = returnToRoleplay === true;
         setSelectedCharactersForSession([]);
         setPendingRoleplayJoin(null);
         setRoleplayPage(1);
@@ -3248,6 +3505,7 @@ export default function GroupInfoScreen() {
           sessionId: sessionId,
           groupTitle: community?.name || groupTitle || 'Roleplay',
           myCharacters: selectedCharactersForSession,
+          characterSwitched: wasReturningToRoleplay, // Flag to indicate character was switched
         });
 
         return;
@@ -4325,6 +4583,312 @@ export default function GroupInfoScreen() {
     return null;
   };
 
+  // Handle Leave Community
+  const handleLeaveCommunity = () => {
+    Alert.alert(
+      'Leave Community',
+      `Are you sure you want to leave "${community?.name || 'this community'}"? You will be removed from the members list.`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        },
+        {
+          text: 'Leave & Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (!auth.currentUser || !communityId) {
+                Alert.alert('Error', 'Unable to leave community at this time.');
+                return;
+              }
+
+              const userId = auth.currentUser.uid;
+              const membershipId = `${userId}_${communityId}`;
+
+              // Delete membership document
+              const membershipRef = doc(db, 'communities_members', membershipId);
+              await deleteDoc(membershipRef);
+
+              // Update community document - remove user from members array
+              const communityRef = doc(db, 'communities', communityId);
+              await runTransaction(db, async (transaction) => {
+                const communitySnap = await transaction.get(communityRef);
+                if (!communitySnap.exists()) {
+                  throw new Error('Community not found');
+                }
+
+                const communityData = communitySnap.data();
+                let updatedMembers = [];
+                
+                // Handle members array
+                if (Array.isArray(communityData.members)) {
+                  updatedMembers = communityData.members.filter(id => id !== userId);
+                }
+
+                // Decrement member count
+                const currentCount = communityData.members_count || 
+                                   (Array.isArray(communityData.members) ? communityData.members.length : 0);
+                const newCount = Math.max(0, currentCount - 1);
+
+                transaction.update(communityRef, {
+                  members: updatedMembers,
+                  members_count: newCount
+                });
+              });
+
+              Alert.alert(
+                'Left Successfully',
+                'You have been removed from the community.',
+                [
+                  {
+                    text: 'OK',
+                    onPress: () => navigation.goBack()
+                  }
+                ]
+              );
+            } catch (error) {
+              console.error('Error leaving community:', error);
+              Alert.alert('Error', 'Failed to leave community. Please try again.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // Handle Kick Member (Admin Only)
+  const handleKickMember = (memberId, memberName) => {
+    if (!isAdmin) {
+      Alert.alert('Error', 'Only admins can kick members.');
+      return;
+    }
+
+    Alert.alert(
+      'Kick Member',
+      `Are you sure you want to remove ${memberName} from this community?`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (!communityId || !memberId) {
+                Alert.alert('Error', 'Unable to remove member at this time.');
+                return;
+              }
+
+              const membershipId = `${memberId}_${communityId}`;
+
+              // Delete membership document
+              const membershipRef = doc(db, 'communities_members', membershipId);
+              await deleteDoc(membershipRef);
+
+              // Update community document - remove user from members array
+              const communityRef = doc(db, 'communities', communityId);
+              await runTransaction(db, async (transaction) => {
+                const communitySnap = await transaction.get(communityRef);
+                if (!communitySnap.exists()) {
+                  throw new Error('Community not found');
+                }
+
+                const communityData = communitySnap.data();
+                let updatedMembers = [];
+                
+                // Handle members array
+                if (Array.isArray(communityData.members)) {
+                  updatedMembers = communityData.members.filter(id => id !== memberId);
+                }
+
+                // Decrement member count
+                const currentCount = communityData.members_count || 
+                                   (Array.isArray(communityData.members) ? communityData.members.length : 0);
+                const newCount = Math.max(0, currentCount - 1);
+
+                transaction.update(communityRef, {
+                  members: updatedMembers,
+                  members_count: newCount
+                });
+              });
+
+              // Refresh members list
+              setAllMembers(prevMembers => prevMembers.filter(m => m.id !== memberId));
+              Alert.alert('Success', `${memberName} has been removed from the community.`);
+            } catch (error) {
+              console.error('Error kicking member:', error);
+              Alert.alert('Error', 'Failed to remove member. Please try again.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // Handle Share Community - Show options
+  const handleShareCommunity = () => {
+    Alert.alert(
+      'Share Community',
+      'How would you like to share this community?',
+      [
+        {
+          text: 'Share as Post',
+          onPress: handleShareAsPost
+        },
+        {
+          text: 'Share Link',
+          onPress: handleShareLink
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        }
+      ]
+    );
+  };
+
+  // Share via native share dialog
+  const handleShareLink = async () => {
+    try {
+      const result = await Share.share({
+        message: `Join "${community?.name || 'our community'}" on Social Vibing!\n\n${inviteLink}`,
+        title: `Join ${community?.name || 'our community'}`,
+      });
+      
+      if (result.action === Share.sharedAction) {
+        Alert.alert('Success', 'Community shared successfully!');
+      }
+    } catch (error) {
+      console.error('Error sharing community:', error);
+      Alert.alert('Error', 'Failed to share community.');
+    }
+  };
+
+  // Share as a post in the community
+  const handleShareAsPost = async () => {
+    try {
+      if (!communityId || !currentUser) {
+        Alert.alert('Error', 'Unable to share at this time.');
+        return;
+      }
+
+      const firestore = await import('firebase/firestore');
+      
+      // Create post data
+      const postData = {
+        text: `Check out ${community?.name || 'this community'}! 🎉\n\nJoin us to connect with amazing people and share great content!`,
+        authorId: currentUser.id,
+        authorName: currentUser.name || 'User',
+        authorImage: currentUser.profileImage || null,
+        communityId: communityId,
+        communityName: community?.name || 'Community',
+        communityImage: community?.profileImage || null,
+        communityDescription: community?.description || '',
+        memberCount: community?.memberCount || 0,
+        type: 'community_share',
+        inviteLink: inviteLink,
+        likes: 0,
+        comments: 0,
+        likedBy: [],
+        createdAt: firestore.serverTimestamp(),
+      };
+      
+      // Post to community's posts collection
+      const communityPostsCol = collection(db, 'communities', communityId, 'posts');
+      await firestore.addDoc(communityPostsCol, postData);
+      
+      // Also post to home feed (main posts collection for discovery)
+      const homePostsCol = collection(db, 'posts');
+      await firestore.addDoc(homePostsCol, {
+        ...postData,
+        visibility: 'public',
+      });
+
+      Alert.alert('Success', 'Community shared as post!');
+      setShowShareModal(false);
+    } catch (error) {
+      console.error('Error sharing as post:', error);
+      Alert.alert('Error', 'Failed to share community as post.');
+    }
+  };
+
+  // Handle Copy Invite Link
+  const handleCopyInviteLink = () => {
+    Alert.alert(
+      'Invite Link',
+      inviteLink,
+      [
+        {
+          text: 'Share',
+          onPress: handleShareCommunity
+        },
+        {
+          text: 'Close',
+          style: 'cancel'
+        }
+      ]
+    );
+  };
+
+  // Handle Delete Community
+  const handleDeleteCommunity = () => {
+    Alert.alert(
+      'Delete Community',
+      `Are you sure you want to permanently delete "${community?.name || 'this community'}"? This action cannot be undone and will remove all posts, members, and data.`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        },
+        {
+          text: 'Delete Permanently',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (!communityId || !isAdmin) {
+                Alert.alert('Error', 'Only admins can delete communities.');
+                return;
+              }
+
+              // Delete community document
+              const communityRef = doc(db, 'communities', communityId);
+              await deleteDoc(communityRef);
+
+              // Delete all membership documents
+              const membershipsQuery = collection(db, 'communities_members');
+              const firestore = await import('firebase/firestore');
+              const q = firestore.query(membershipsQuery, firestore.where('community_id', '==', communityId));
+              const membershipsSnapshot = await firestore.getDocs(q);
+              
+              const deletePromises = membershipsSnapshot.docs.map(doc => deleteDoc(doc.ref));
+              await Promise.all(deletePromises);
+
+              // Delete all chat messages (optional - can be heavy operation)
+              // For now, just delete the main community
+
+              Alert.alert(
+                'Community Deleted',
+                'The community has been permanently deleted.',
+                [
+                  {
+                    text: 'OK',
+                    onPress: () => navigation.goBack()
+                  }
+                ]
+              );
+            } catch (error) {
+              console.error('Error deleting community:', error);
+              Alert.alert('Error', 'Failed to delete community. Please try again.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   // Handle Start Audio Call
   return (
     <View style={styles.container}>
@@ -4334,7 +4898,16 @@ export default function GroupInfoScreen() {
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.topBarTitle}>{community?.name || groupTitle || 'Community'}</Text>
-        <View style={{ width: 24 }} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 15 }}>
+          {isAdmin && (
+            <TouchableOpacity onPress={() => setShowAdminPanel(true)}>
+              <MaterialIcons name="admin-panel-settings" size={24} color="#FFD700" />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={handleLeaveCommunity}>
+            <MaterialIcons name="exit-to-app" size={24} color="#ff4b6e" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {loading ? (
@@ -4350,6 +4923,14 @@ export default function GroupInfoScreen() {
           {/* Content Area */}
           <ScrollView 
             style={{ flex: 1 }}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor="#8B2EF0"
+                colors={['#8B2EF0']}
+              />
+            }
             onScroll={(event) => {
               const currentOffset = event.nativeEvent.contentOffset.y;
               const scrollDiff = currentOffset - scrollOffsetRef.current;
@@ -4385,17 +4966,25 @@ export default function GroupInfoScreen() {
                       <View style={styles.membersImages}>
                         {members.length > 0 ? (
                           members.map((user, index) => (
-                            <Image
-                              key={user.id}
-                              source={user.profileImage ? { uri: user.profileImage } : require('./assets/a1.png')}
-                              style={[
-                                styles.memberImage,
-                                index !== 0 && { marginLeft: -10 },
-                              ]}
-                            />
+                            user.profileImage ? (
+                              <Image
+                                key={user.id}
+                                source={{ uri: user.profileImage }}
+                                style={[
+                                  styles.memberImage,
+                                  index !== 0 && { marginLeft: -10 },
+                                ]}
+                              />
+                            ) : (
+                              <View key={user.id} style={[styles.memberImage, index !== 0 && { marginLeft: -10 }, { backgroundColor: '#E1E8ED', justifyContent: 'center', alignItems: 'center' }]}>
+                                <Ionicons name="person" size={20} color="#657786" />
+                              </View>
+                            )
                           ))
                         ) : (
-                          <Image source={require('./assets/a1.png')} style={styles.memberImage} />
+                          <View style={[styles.memberImage, { backgroundColor: '#E1E8ED', justifyContent: 'center', alignItems: 'center' }]}>
+                            <Ionicons name="person" size={20} color="#657786" />
+                          </View>
                         )}
                       </View>
                       <Text style={styles.membersText}>{community?.memberCount || members.length || 0} members</Text>
@@ -4437,56 +5026,145 @@ export default function GroupInfoScreen() {
                     <Text style={{color: '#fff', fontWeight: '600', fontSize: 14}}>Info</Text>
                   </TouchableOpacity>
                   <TouchableOpacity 
-                    onPress={() => setCommunitySection('achievements')}
-                    style={{backgroundColor: communitySection === 'achievements' ? '#8B2EF0' : 'transparent', borderWidth: communitySection === 'achievements' ? 0 : 1, borderColor: '#444', borderRadius: 20, paddingHorizontal: 24, paddingVertical: 8, justifyContent: 'center'}}>
-                    <Text style={{color: '#fff', fontWeight: '600', fontSize: 14}}>Achievements</Text>
+                    onPress={() => setCommunitySection('groups')}
+                    style={{backgroundColor: communitySection === 'groups' ? '#8B2EF0' : 'transparent', borderWidth: communitySection === 'groups' ? 0 : 1, borderColor: '#444', borderRadius: 20, paddingHorizontal: 24, paddingVertical: 8, justifyContent: 'center'}}>
+                    <Text style={{color: '#fff', fontWeight: '600', fontSize: 14}}>Groups</Text>
                   </TouchableOpacity>
                 </ScrollView>
 
-                {/* Achievements Section */}
-                {(communitySection === 'all' || communitySection === 'achievements') && (
-                <View style={{paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8}}>
-                  <Text style={{color: '#fff', fontSize: 16, fontWeight: '700', marginBottom: 12}}>Achievements</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom: 8}}>
-                    {[
-                      {id: '1', name: 'Regina', time: '1 hour ago', avatar: require('./assets/a1.png')},
-                      {id: '2', name: 'Judith', time: '1 hour ago', avatar: require('./assets/a1.png')},
-                      {id: '3', name: 'Julie', time: '1 hour ago', avatar: require('./assets/a1.png')},
-                      {id: '4', name: 'Colleen', time: '1 hour ago', avatar: require('./assets/a1.png')},
-                      {id: '5', name: 'Courtney', time: '1 hour ago', avatar: require('./assets/a1.png')},
-                    ].map((user) => (
-                      <View key={user.id} style={{alignItems: 'center', marginRight: 16}}>
-                        <Image source={user.avatar} style={{width: 56, height: 56, borderRadius: 28, marginBottom: 6}} />
-                        <Text style={{color: '#fff', fontSize: 12, fontWeight: '600', textAlign: 'center', width: 60}}>{user.name}</Text>
-                        <Text style={{color: '#888', fontSize: 10, marginTop: 2}}>{user.time}</Text>
-                      </View>
-                    ))}
-                  </ScrollView>
-                </View>
-                )}
-
-                {/* Live Parties Section */}
-                {(communitySection === 'all' || communitySection === 'parties') && (
+                {/* Groups Section */}
+                {(communitySection === 'all' || communitySection === 'groups') && (
                 <View style={{paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12}}>
                   <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12}}>
-                    <Text style={{color: '#fff', fontSize: 16, fontWeight: '700'}}>Live Parties</Text>
-                    <TouchableOpacity>
-                      <Text style={{color: '#8B2EF0', fontSize: 13, fontWeight: '600'}}>View all  →</Text>
+                    <Text style={{color: '#fff', fontSize: 16, fontWeight: '700'}}>
+                      Groups {communityGroups.length > 0 && `(${communityGroups.length})`}
+                    </Text>
+                    <TouchableOpacity 
+                      onPress={() => navigation.navigate('CommunityCreateGroup', { 
+                        communityId: communityId,
+                        communityName: community?.name || groupTitle 
+                      })}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        backgroundColor: '#8B2EF0',
+                        paddingHorizontal: 16,
+                        paddingVertical: 8,
+                        borderRadius: 20,
+                        gap: 6
+                      }}
+                    >
+                      <Ionicons name="add-circle" size={18} color="#fff" />
+                      <Text style={{color: '#fff', fontSize: 13, fontWeight: '600'}}>Create Group</Text>
                     </TouchableOpacity>
                   </View>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    {[
-                      {id: '1', title: 'Anime&Manga', image: require('./assets/posticon.jpg')},
-                      {id: '2', title: 'Role play', image: require('./assets/posticon.jpg')},
-                      {id: '3', title: 'Art & Aesthetic', image: require('./assets/posticon.jpg')},
-                      {id: '4', title: 'Fandom', image: require('./assets/posticon.jpg')},
-                    ].map((party) => (
-                      <View key={party.id} style={{marginRight: 12}}>
-                        <Image source={party.image} style={{width: 140, height: 160, borderRadius: 12}} />
-                        <Text style={{color: '#fff', fontSize: 12, fontWeight: '600', marginTop: 6, maxWidth: 140}}>{party.title}</Text>
-                      </View>
-                    ))}
-                  </ScrollView>
+                  
+                  {communityGroups.length === 0 ? (
+                    <View style={{backgroundColor: '#1e1e1e', borderRadius: 12, padding: 20, alignItems: 'center'}}>
+                      <Ionicons name="people-outline" size={40} color="#666" />
+                      <Text style={{color: '#888', fontSize: 14, marginTop: 8, textAlign: 'center'}}>
+                        No groups yet. Create a group to organize discussions!
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={{gap: 12}}>
+                      {communityGroups.map((group) => {
+                        const isJoined = joinedGroupIds.includes(group.id);
+                        return (
+                        <TouchableOpacity
+                          key={group.id}
+                          style={{
+                            backgroundColor: '#1e1e1e',
+                            borderRadius: 12,
+                            padding: 14,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            borderWidth: 1,
+                            borderColor: isJoined ? '#8B2EF0' : '#333',
+                          }}
+                          activeOpacity={0.7}
+                          onPress={() => navigation.navigate('CommunityGroupChat', {
+                            communityId: communityId,
+                            groupId: group.id,
+                            groupName: group.name,
+                            groupImage: group.groupImage,
+                            groupEmoji: group.theme?.emoji,
+                            groupColor: group.theme?.color,
+                          })}
+                        >
+                          {/* Group Image/Emoji */}
+                          <View style={{
+                            width: 56,
+                            height: 56,
+                            borderRadius: 28,
+                            backgroundColor: group.theme?.color || '#8B2EF0',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            marginRight: 12,
+                            overflow: 'hidden'
+                          }}>
+                            {group.groupImage ? (
+                              <Image 
+                                source={{ uri: group.groupImage }} 
+                                style={{width: 56, height: 56}} 
+                              />
+                            ) : (
+                              <Text style={{fontSize: 28}}>
+                                {group.theme?.emoji || '💬'}
+                              </Text>
+                            )}
+                          </View>
+                          
+                          {/* Group Info */}
+                          <View style={{flex: 1}}>
+                            <View style={{flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4}}>
+                              <Text style={{
+                                color: '#fff',
+                                fontSize: 16,
+                                fontWeight: '700',
+                              }}>
+                                {group.name}
+                              </Text>
+                              {isJoined && (
+                                <View style={{
+                                  backgroundColor: '#8B2EF0',
+                                  paddingHorizontal: 8,
+                                  paddingVertical: 3,
+                                  borderRadius: 10,
+                                }}>
+                                  <Text style={{color: '#fff', fontSize: 10, fontWeight: '700'}}>
+                                    JOINED
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+                            
+                            {group.description ? (
+                              <Text style={{
+                                color: '#888',
+                                fontSize: 13,
+                                marginBottom: 4
+                              }} numberOfLines={1}>
+                                {group.description}
+                              </Text>
+                            ) : null}
+                            
+                            <View style={{flexDirection: 'row', alignItems: 'center', gap: 12}}>
+                              <View style={{flexDirection: 'row', alignItems: 'center', gap: 4}}>
+                                <Ionicons name="people" size={14} color="#666" />
+                                <Text style={{color: '#666', fontSize: 12}}>
+                                  {group.memberCount || 0} members
+                                </Text>
+                              </View>
+                            </View>
+                          </View>
+                          
+                          {/* Arrow */}
+                          <Ionicons name="chevron-forward" size={20} color="#666" />
+                        </TouchableOpacity>
+                      );})}
+                    </View>
+                  )}
                 </View>
                 )}
 
@@ -4553,10 +5231,16 @@ export default function GroupInfoScreen() {
                         {/* Author Info */}
                         <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12}}>
                           <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                            <Image 
-                              source={post.authorImage ? { uri: post.authorImage } : require('./assets/a1.png')} 
-                              style={{width: 44, height: 44, borderRadius: 22, marginRight: 10}} 
-                            />
+                            {post.authorImage ? (
+                              <Image 
+                                source={{ uri: post.authorImage }} 
+                                style={{width: 44, height: 44, borderRadius: 22, marginRight: 10}} 
+                              />
+                            ) : (
+                              <View style={{width: 44, height: 44, borderRadius: 22, marginRight: 10, backgroundColor: '#E1E8ED', justifyContent: 'center', alignItems: 'center'}}>
+                                <Ionicons name="person" size={30} color="#657786" />
+                              </View>
+                            )}
                             <View>
                               <Text style={{color: '#fff', fontSize: 14, fontWeight: '600'}}>{post.authorName || 'User'}</Text>
                               <Text style={{color: '#888', fontSize: 12}}>
@@ -4596,6 +5280,73 @@ export default function GroupInfoScreen() {
                                 {post.caption}
                               </Text>
                             )}
+                          </>
+                        )}
+
+                        {/* Community Share - Show shared community */}
+                        {post.type === 'community_share' && (
+                          <>
+                            <Text style={{color: '#ccc', fontSize: 13, lineHeight: 18, marginBottom: 12}}>
+                              {post.text}
+                            </Text>
+                            <TouchableOpacity
+                              style={{
+                                backgroundColor: '#252525',
+                                borderRadius: 12,
+                                padding: 14,
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                marginBottom: 12,
+                                borderWidth: 1,
+                                borderColor: '#333',
+                              }}
+                              onPress={() => {
+                                if (post.communityId) {
+                                  // Navigate to Community screen which will handle validation flow
+                                  navigation.navigate('Community', {
+                                    openCommunityId: post.communityId,
+                                    openCommunityData: {
+                                      id: post.communityId,
+                                      community_id: post.communityId,
+                                      name: post.communityName,
+                                      community_title: post.communityName,
+                                      profileImage: post.communityImage,
+                                      img: post.communityImage ? { uri: post.communityImage } : null,
+                                      description: post.communityDescription,
+                                      community_members: post.memberCount || 0,
+                                    }
+                                  });
+                                }
+                              }}
+                            >
+                              {post.communityImage ? (
+                                <Image
+                                  source={{ uri: post.communityImage }}
+                                  style={{width: 56, height: 56, borderRadius: 28, marginRight: 12}}
+                                />
+                              ) : (
+                                <View style={{width: 56, height: 56, borderRadius: 28, marginRight: 12, backgroundColor: '#333', justifyContent: 'center', alignItems: 'center'}}>
+                                  <Ionicons name="people" size={28} color="#666" />
+                                </View>
+                              )}
+                              <View style={{flex: 1}}>
+                                <Text style={{color: '#fff', fontSize: 16, fontWeight: '700', marginBottom: 4}}>
+                                  {post.communityName || 'Community'}
+                                </Text>
+                                {post.communityDescription ? (
+                                  <Text style={{color: '#888', fontSize: 13, marginBottom: 4}} numberOfLines={2}>
+                                    {post.communityDescription}
+                                  </Text>
+                                ) : null}
+                                <View style={{flexDirection: 'row', alignItems: 'center', gap: 4}}>
+                                  <Ionicons name="people" size={14} color="#666" />
+                                  <Text style={{color: '#666', fontSize: 12}}>
+                                    {post.memberCount || 0} members
+                                  </Text>
+                                </View>
+                              </View>
+                              <Ionicons name="chevron-forward" size={20} color="#666" />
+                            </TouchableOpacity>
                           </>
                         )}
 
@@ -4650,38 +5401,80 @@ export default function GroupInfoScreen() {
                       <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 18}}>▼</Text>
                     </TouchableOpacity>
                   </View>
+
+                  {/* Search Bar for Members */}
+                  <View style={styles.memberSearchContainer}>
+                    <Ionicons name="search" size={20} color="#888" style={{ marginRight: 8 }} />
+                    <TextInput
+                      style={styles.memberSearchInput}
+                      placeholder="Search members..."
+                      placeholderTextColor="#888"
+                      value={memberSearchQuery}
+                      onChangeText={setMemberSearchQuery}
+                    />
+                    {memberSearchQuery.length > 0 && (
+                      <TouchableOpacity onPress={() => setMemberSearchQuery('')}>
+                        <Ionicons name="close-circle" size={20} color="#888" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
                   <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 8, marginBottom: 4}}>
                     <View style={{flexDirection: 'row', alignItems: 'center'}}>
                       <View style={{width: 8, height: 8, borderRadius: 4, backgroundColor: '#40FC6F', marginRight: 6}} />
-                      <Text style={{color: '#fff', fontWeight: '600', fontSize: 14}}>Members online ({allMembers.length})</Text>
+                      <Text style={{color: '#fff', fontWeight: '600', fontSize: 14}}>
+                        Members ({allMembers.filter(m => 
+                          !memberSearchQuery || 
+                          m.name?.toLowerCase().includes(memberSearchQuery.toLowerCase()) ||
+                          m.email?.toLowerCase().includes(memberSearchQuery.toLowerCase())
+                        ).length})
+                      </Text>
                     </View>
                     <View style={{flex: 1}} />
-                    <TouchableOpacity>
+                    <TouchableOpacity onPress={() => setShowMembersModal(true)}>
                       <Text style={{color: '#8B2EF0', fontWeight: '600', fontSize: 14}}>See All</Text>
                     </TouchableOpacity>
                   </View>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginTop: 8}}>
-                    {allMembers.length === 0 ? (
+                    {allMembers.filter(m => 
+                      !memberSearchQuery || 
+                      m.name?.toLowerCase().includes(memberSearchQuery.toLowerCase()) ||
+                      m.email?.toLowerCase().includes(memberSearchQuery.toLowerCase())
+                    ).length === 0 ? (
                       <View style={{paddingVertical: 20, alignItems: 'center', width: Dimensions.get('window').width - 32}}>
-                        <Text style={{color: '#888', fontSize: 14}}>No members found</Text>
+                        <Text style={{color: '#888', fontSize: 14}}>
+                          {memberSearchQuery ? 'No members match your search' : 'No members found'}
+                        </Text>
                       </View>
                     ) : (
-                      allMembers.map((member, idx) => (
-                        <TouchableOpacity 
-                          key={member.id || idx} 
-                          style={{alignItems: 'center', marginRight: 18}}
-                          onPress={() => navigation.navigate('Profile', { userId: member.id })}
-                          activeOpacity={0.7}
-                        >
-                          <Image 
-                            source={member.profileImage ? { uri: member.profileImage } : require('./assets/a1.png')} 
-                            style={{width: 48, height: 48, borderRadius: 24, borderWidth: 2, borderColor: '#8B2EF0'}} 
-                          />
-                          <Text style={{color: '#fff', fontSize: 12, fontWeight: '500', marginTop: 4, maxWidth: 60}} numberOfLines={1}>
-                            {member.name || 'User'}
-                          </Text>
-                        </TouchableOpacity>
-                      ))
+                      allMembers
+                        .filter(m => 
+                          !memberSearchQuery || 
+                          m.name?.toLowerCase().includes(memberSearchQuery.toLowerCase()) ||
+                          m.email?.toLowerCase().includes(memberSearchQuery.toLowerCase())
+                        )
+                        .map((member, idx) => (
+                          <TouchableOpacity 
+                            key={member.id || idx} 
+                            style={{alignItems: 'center', marginRight: 18}}
+                            onPress={() => navigation.navigate('Profile', { userId: member.id })}
+                            activeOpacity={0.7}
+                          >
+                            {member.profileImage ? (
+                              <Image 
+                                source={{ uri: member.profileImage }} 
+                                style={{width: 48, height: 48, borderRadius: 24, borderWidth: 2, borderColor: '#8B2EF0'}} 
+                              />
+                            ) : (
+                              <View style={{width: 48, height: 48, borderRadius: 24, borderWidth: 2, borderColor: '#8B2EF0', backgroundColor: '#E1E8ED', justifyContent: 'center', alignItems: 'center'}}>
+                                <Ionicons name="person" size={30} color="#657786" />
+                              </View>
+                            )}
+                            <Text style={{color: '#fff', fontSize: 12, fontWeight: '500', marginTop: 4, maxWidth: 60}} numberOfLines={1}>
+                              {member.name || 'User'}
+                            </Text>
+                          </TouchableOpacity>
+                        ))
                     )}
                   </ScrollView>
                 </View>
@@ -4780,10 +5573,16 @@ export default function GroupInfoScreen() {
                               onPress={() => navigation.navigate('Profile', { userId: member.id })}
                               activeOpacity={0.7}
                             >
-                              <Image 
-                                source={member.profileImage ? { uri: member.profileImage } : require('./assets/a1.png')} 
-                                style={{width:48,height:48,borderRadius:24,marginRight:12}} 
-                              />
+                              {member.profileImage ? (
+                                <Image 
+                                  source={{ uri: member.profileImage }} 
+                                  style={{width:48,height:48,borderRadius:24,marginRight:12}} 
+                                />
+                              ) : (
+                                <View style={{width:48,height:48,borderRadius:24,marginRight:12,backgroundColor:'#E1E8ED',justifyContent:'center',alignItems:'center'}}>
+                                  <Ionicons name="person" size={30} color="#657786" />
+                                </View>
+                              )}
                             </TouchableOpacity>
                             <Text style={{color:'#fff',fontSize:15,fontWeight:'500'}}>{member.name}</Text>
                           </View>
@@ -4803,10 +5602,16 @@ export default function GroupInfoScreen() {
                               onPress={() => navigation.navigate('Profile', { userId: member.id })}
                               activeOpacity={0.7}
                             >
-                              <Image 
-                                source={member.profileImage ? { uri: member.profileImage } : require('./assets/a1.png')} 
-                                style={{width:48,height:48,borderRadius:24,marginRight:12}} 
-                              />
+                              {member.profileImage ? (
+                                <Image 
+                                  source={{ uri: member.profileImage }} 
+                                  style={{width:48,height:48,borderRadius:24,marginRight:12}} 
+                                />
+                              ) : (
+                                <View style={{width:48,height:48,borderRadius:24,marginRight:12,backgroundColor:'#E1E8ED',justifyContent:'center',alignItems:'center'}}>
+                                  <Ionicons name="person" size={30} color="#657786" />
+                                </View>
+                              )}
                             </TouchableOpacity>
                             <Text style={{color:'#fff',fontSize:15,fontWeight:'500'}}>{member.name}</Text>
                           </View>
@@ -4826,10 +5631,16 @@ export default function GroupInfoScreen() {
                               onPress={() => navigation.navigate('Profile', { userId: member.id })}
                               activeOpacity={0.7}
                             >
-                              <Image 
-                                source={member.profileImage ? { uri: member.profileImage } : require('./assets/a1.png')} 
-                                style={{width:48,height:48,borderRadius:24,marginRight:12}} 
-                              />
+                              {member.profileImage ? (
+                                <Image 
+                                  source={{ uri: member.profileImage }} 
+                                  style={{width:48,height:48,borderRadius:24,marginRight:12}} 
+                                />
+                              ) : (
+                                <View style={{width:48,height:48,borderRadius:24,marginRight:12,backgroundColor:'#E1E8ED',justifyContent:'center',alignItems:'center'}}>
+                                  <Ionicons name="person" size={30} color="#657786" />
+                                </View>
+                              )}
                             </TouchableOpacity>
                             <Text style={{color:'#fff',fontSize:15,fontWeight:'500'}}>{member.name}</Text>
                           </View>
@@ -5276,10 +6087,16 @@ export default function GroupInfoScreen() {
               <View style={styles.accountSection}>
                 <View style={styles.accountCard}>
                   <View style={styles.accountAvatarContainer}>
-                    <Image 
-                      source={currentUser?.profileImage ? { uri: currentUser.profileImage } : require('./assets/a1.png')} 
-                      style={styles.accountAvatar} 
-                    />
+                    {currentUser?.profileImage ? (
+                      <Image 
+                        source={{ uri: currentUser.profileImage }} 
+                        style={styles.accountAvatar} 
+                      />
+                    ) : (
+                      <View style={[styles.accountAvatar, { backgroundColor: '#E1E8ED', justifyContent: 'center', alignItems: 'center' }]}>
+                        <Ionicons name="person" size={60} color="#657786" />
+                      </View>
+                    )}
                     <View style={styles.accountBadge}>
                       <Ionicons name="checkmark-circle" size={24} color="#00FF47" />
                     </View>
@@ -5462,10 +6279,16 @@ export default function GroupInfoScreen() {
 
             {/* Author Info */}
             <View style={styles.imageAuthorInfo}>
-              <Image
-                source={currentUser?.profileImage ? { uri: currentUser.profileImage } : require('./assets/a1.png')}
-                style={styles.imageAuthorAvatar}
-              />
+              {currentUser?.profileImage ? (
+                <Image
+                  source={{ uri: currentUser.profileImage }}
+                  style={styles.imageAuthorAvatar}
+                />
+              ) : (
+                <View style={[styles.imageAuthorAvatar, { backgroundColor: '#E1E8ED', justifyContent: 'center', alignItems: 'center' }]}>
+                  <Ionicons name="person" size={30} color="#657786" />
+                </View>
+              )}
               <View style={{flex: 1}}>
                 <Text style={styles.imageAuthorName}>{currentUser?.name || 'User'}</Text>
                 <Text style={styles.imageAuthorEmail}>{currentUser?.email || 'user@example.com'}</Text>
@@ -5541,10 +6364,16 @@ export default function GroupInfoScreen() {
 
             {/* Author Info */}
             <View style={styles.blogAuthorInfo}>
-              <Image
-                source={currentUser?.profileImage ? { uri: currentUser.profileImage } : require('./assets/a1.png')}
-                style={styles.blogAuthorAvatar}
-              />
+              {currentUser?.profileImage ? (
+                <Image
+                  source={{ uri: currentUser.profileImage }}
+                  style={styles.blogAuthorAvatar}
+                />
+              ) : (
+                <View style={[styles.blogAuthorAvatar, { backgroundColor: '#E1E8ED', justifyContent: 'center', alignItems: 'center' }]}>
+                  <Ionicons name="person" size={30} color="#657786" />
+                </View>
+              )}
               <View style={{flex: 1}}>
                 <Text style={styles.blogAuthorName}>{currentUser?.name || 'User'}</Text>
                 <Text style={styles.blogAuthorEmail}>{currentUser?.email || 'user@example.com'}</Text>
@@ -5838,13 +6667,23 @@ export default function GroupInfoScreen() {
                     currentVoiceChatSession?.adminId === participant.id && styles.voiceChatParticipantAdmin,
                   ]}
                 >
-                  <Image
-                    source={participant.profileImage ? { uri: participant.profileImage } : require('./assets/a1.png')}
-                    style={[
+                  {participant.profileImage ? (
+                    <Image
+                      source={{ uri: participant.profileImage }}
+                      style={[
+                        styles.voiceChatParticipantImage,
+                        speakingUsers.some(s => s.userId === participant.id) && styles.voiceChatParticipantSpeaking
+                      ]}
+                    />
+                  ) : (
+                    <View style={[
                       styles.voiceChatParticipantImage,
-                      speakingUsers.some(s => s.userId === participant.id) && styles.voiceChatParticipantSpeaking
-                    ]}
-                  />
+                      speakingUsers.some(s => s.userId === participant.id) && styles.voiceChatParticipantSpeaking,
+                      { backgroundColor: '#E1E8ED', justifyContent: 'center', alignItems: 'center' }
+                    ]}>
+                      <Ionicons name="person" size={40} color="#657786" />
+                    </View>
+                  )}
                   {speakingUsers.some(s => s.userId === participant.id) && (
                     <View style={styles.speakingIndicator}>
                       <View style={styles.speakingPulse} />
@@ -5864,10 +6703,16 @@ export default function GroupInfoScreen() {
             ) : (
               currentVoiceChatSession && (
                 <View style={styles.voiceChatParticipantAvatar}>
-                  <Image
-                    source={currentUser?.profileImage ? { uri: currentUser.profileImage } : require('./assets/a1.png')}
-                    style={styles.voiceChatParticipantImage}
-                  />
+                  {currentUser?.profileImage ? (
+                    <Image
+                      source={{ uri: currentUser.profileImage }}
+                      style={styles.voiceChatParticipantImage}
+                    />
+                  ) : (
+                    <View style={[styles.voiceChatParticipantImage, { backgroundColor: '#E1E8ED', justifyContent: 'center', alignItems: 'center' }]}>
+                      <Ionicons name="person" size={40} color="#657786" />
+                    </View>
+                  )}
                   {currentVoiceChatSession?.adminId === currentUser?.id && (
                     <View style={styles.adminBadge}>
                       <Text style={styles.adminBadgeText}>Admin</Text>
@@ -5930,10 +6775,16 @@ export default function GroupInfoScreen() {
                     ]}
                   >
                     {!isCurrentUser && (
-                      <Image
-                        source={msg.profileImage ? { uri: msg.profileImage } : require('./assets/a1.png')}
-                        style={styles.voiceChatMessageAvatar}
-                      />
+                      msg.profileImage ? (
+                        <Image
+                          source={{ uri: msg.profileImage }}
+                          style={styles.voiceChatMessageAvatar}
+                        />
+                      ) : (
+                        <View style={[styles.voiceChatMessageAvatar, { backgroundColor: '#E1E8ED', justifyContent: 'center', alignItems: 'center' }]}>
+                          <Ionicons name="person" size={24} color="#657786" />
+                        </View>
+                      )
                     )}
                     <View style={[
                       styles.voiceChatMessageBox,
@@ -6021,10 +6872,16 @@ export default function GroupInfoScreen() {
                       )}
                     </View>
                     {isCurrentUser && (
-                      <Image
-                        source={currentUser?.profileImage ? { uri: currentUser.profileImage } : require('./assets/a1.png')}
-                        style={styles.voiceChatMessageAvatar}
-                      />
+                      currentUser?.profileImage ? (
+                        <Image
+                          source={{ uri: currentUser.profileImage }}
+                          style={styles.voiceChatMessageAvatar}
+                        />
+                      ) : (
+                        <View style={[styles.voiceChatMessageAvatar, { backgroundColor: '#E1E8ED', justifyContent: 'center', alignItems: 'center' }]}>
+                          <Ionicons name="person" size={24} color="#657786" />
+                        </View>
+                      )
                     )}
                   </View>
                 );
@@ -7321,6 +8178,226 @@ export default function GroupInfoScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Admin Panel Modal */}
+      <Modal
+        visible={showAdminPanel}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowAdminPanel(false)}
+      >
+        <View style={styles.adminModalContainer}>
+          <View style={styles.adminModalContent}>
+            {/* Header */}
+            <View style={styles.adminModalHeader}>
+              <Text style={styles.adminModalTitle}>Admin Panel</Text>
+              <TouchableOpacity onPress={() => setShowAdminPanel(false)}>
+                <Ionicons name="close" size={28} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Admin Options */}
+            <ScrollView style={styles.adminOptionsContainer}>
+              {/* Share Community */}
+              <TouchableOpacity
+                style={styles.adminOption}
+                onPress={() => {
+                  setShowAdminPanel(false);
+                  setShowShareModal(true);
+                }}
+              >
+                <MaterialIcons name="share" size={24} color="#8B2EF0" />
+                <View style={styles.adminOptionText}>
+                  <Text style={styles.adminOptionTitle}>Share Community</Text>
+                  <Text style={styles.adminOptionSubtitle}>Invite link & QR code</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={24} color="#888" />
+              </TouchableOpacity>
+
+              {/* View Members */}
+              <TouchableOpacity
+                style={styles.adminOption}
+                onPress={() => {
+                  setShowAdminPanel(false);
+                  setShowMembersModal(true);
+                }}
+              >
+                <MaterialIcons name="people" size={24} color="#8B2EF0" />
+                <View style={styles.adminOptionText}>
+                  <Text style={styles.adminOptionTitle}>Manage Members</Text>
+                  <Text style={styles.adminOptionSubtitle}>{allMembers.length} members</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={24} color="#888" />
+              </TouchableOpacity>
+
+              {/* Delete Community */}
+              <TouchableOpacity
+                style={[styles.adminOption, styles.adminOptionDanger]}
+                onPress={() => {
+                  setShowAdminPanel(false);
+                  handleDeleteCommunity();
+                }}
+              >
+                <MaterialIcons name="delete-forever" size={24} color="#ff4b6e" />
+                <View style={styles.adminOptionText}>
+                  <Text style={[styles.adminOptionTitle, { color: '#ff4b6e' }]}>Delete Community</Text>
+                  <Text style={styles.adminOptionSubtitle}>Permanently remove this community</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={24} color="#888" />
+              </TouchableOpacity>
+
+              {/* Community Stats */}
+              <View style={styles.adminStatsContainer}>
+                <Text style={styles.adminStatsTitle}>Community Statistics</Text>
+                <View style={styles.adminStatRow}>
+                  <Text style={styles.adminStatLabel}>Total Members:</Text>
+                  <Text style={styles.adminStatValue}>{community?.memberCount || allMembers.length}</Text>
+                </View>
+                <View style={styles.adminStatRow}>
+                  <Text style={styles.adminStatLabel}>Total Massages:</Text>
+                  <Text style={styles.adminStatValue}>{chatMessages.length}</Text>
+                </View>
+                <View style={styles.adminStatRow}>
+                  <Text style={styles.adminStatLabel}>Created:</Text>
+                  <Text style={styles.adminStatValue}>
+                    {community?.createdAt?.toDate?.()?.toLocaleDateString() || 'N/A'}
+                  </Text>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Share Modal */}
+      <Modal
+        visible={showShareModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowShareModal(false)}
+      >
+        <View style={styles.adminModalContainer}>
+          <View style={styles.adminModalContent}>
+            {/* Header */}
+            <View style={styles.adminModalHeader}>
+              <Text style={styles.adminModalTitle}>Share Community</Text>
+              <TouchableOpacity onPress={() => setShowShareModal(false)}>
+                <Ionicons name="close" size={28} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Share Content */}
+            <ScrollView style={styles.shareContentContainer}>
+              {/* Invite Link */}
+              <View style={styles.shareSection}>
+                <Text style={styles.shareSectionTitle}>Invite Link</Text>
+                <View style={styles.inviteLinkContainer}>
+                  <Text style={styles.inviteLinkText} numberOfLines={1}>
+                    {inviteLink}
+                  </Text>
+                </View>
+                <View style={styles.shareButtonsRow}>
+                  <TouchableOpacity
+                    style={styles.shareButton}
+                    onPress={handleCopyInviteLink}
+                  >
+                    <MaterialIcons name="content-copy" size={20} color="#fff" />
+                    <Text style={styles.shareButtonText}>View Link</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.shareButton, styles.shareButtonPrimary]}
+                    onPress={handleShareCommunity}
+                  >
+                    <MaterialIcons name="share" size={20} color="#fff" />
+                    <Text style={styles.shareButtonText}>Share</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* QR Code Section */}
+              <View style={styles.shareSection}>
+                <Text style={styles.shareSectionTitle}>QR Code</Text>
+                <View style={styles.qrCodeContainer}>
+                  <View style={styles.qrCodePlaceholder}>
+                    <MaterialCommunityIcons name="qrcode" size={120} color="#8B2EF0" />
+                    <Text style={styles.qrCodeText}>QR Code</Text>
+                    <Text style={styles.qrCodeSubtext}>
+                      Scan to join community
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={[styles.shareButton, styles.shareButtonSecondary]}
+                  onPress={() => Alert.alert('Coming Soon', 'QR Code download will be available soon!')}
+                >
+                  <MaterialIcons name="download" size={20} color="#8B2EF0" />
+                  <Text style={[styles.shareButtonText, { color: '#8B2EF0' }]}>Download QR Code</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Members Management Modal */}
+      <Modal
+        visible={showMembersModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowMembersModal(false)}
+      >
+        <View style={styles.adminModalContainer}>
+          <View style={styles.adminModalContent}>
+            {/* Header */}
+            <View style={styles.adminModalHeader}>
+              <Text style={styles.adminModalTitle}>
+                Manage Members ({allMembers.length})
+              </Text>
+              <TouchableOpacity onPress={() => setShowMembersModal(false)}>
+                <Ionicons name="close" size={28} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Members List */}
+            <ScrollView style={styles.membersListContainer}>
+              {allMembers.map((member) => (
+                <View key={member.id} style={styles.memberItem}>
+                  <Image
+                    source={
+                      member.profileImage
+                        ? { uri: member.profileImage }
+                        : require('./assets/posticon.jpg')
+                    }
+                    style={styles.memberAvatar}
+                  />
+                  <View style={styles.memberInfo}>
+                    <Text style={styles.memberName}>{member.name}</Text>
+                    {member.isAdmin && (
+                      <Text style={styles.memberBadge}>👑 Admin</Text>
+                    )}
+                    {member.isModerator && !member.isAdmin && (
+                      <Text style={styles.memberBadge}>⭐ Moderator</Text>
+                    )}
+                  </View>
+                  {!member.isAdmin && member.id !== auth.currentUser?.uid && (
+                    <TouchableOpacity
+                      style={styles.kickButton}
+                      onPress={() => handleKickMember(member.id, member.name)}
+                    >
+                      <MaterialIcons name="remove-circle" size={24} color="#ff4b6e" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))}
+              {allMembers.length === 0 && (
+                <View style={styles.emptyMembersContainer}>
+                  <Text style={styles.emptyMembersText}>No members found</Text>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -8379,6 +9456,63 @@ const styles = StyleSheet.create({
     color: '#999',
     fontSize: 13,
     fontWeight: '500',
+  },
+
+  // Community Invite Message Styles
+  communityInviteContainer: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#8B2EF0',
+    marginVertical: 8,
+  },
+  communityInviteHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    backgroundColor: 'rgba(139, 46, 240, 0.1)',
+  },
+  communityInviteTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#8B2EF0',
+  },
+  communityInviteImage: {
+    width: '100%',
+    height: 150,
+    backgroundColor: '#252525',
+  },
+  communityInviteContent: {
+    padding: 12,
+  },
+  communityInviteName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 6,
+  },
+  communityInviteText: {
+    fontSize: 14,
+    color: '#ccc',
+    lineHeight: 20,
+  },
+  communityInviteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#8B2EF0',
+    paddingVertical: 12,
+    gap: 8,
+    margin: 12,
+    marginTop: 0,
+    borderRadius: 10,
+  },
+  communityInviteButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
   },
   // Roleplay Setup Modal Styles
   modalOverlay: {
@@ -10414,6 +11548,229 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
+  },
+
+  // Admin Panel Styles
+  adminModalContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+  },
+  adminModalContent: {
+    backgroundColor: '#1a1a1a',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
+    paddingBottom: 20,
+  },
+  adminModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  adminModalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#FFD700',
+  },
+  adminOptionsContainer: {
+    padding: 20,
+  },
+  adminOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#252525',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  adminOptionDanger: {
+    backgroundColor: '#2a1a1a',
+    borderWidth: 1,
+    borderColor: '#ff4b6e',
+  },
+  adminOptionText: {
+    flex: 1,
+    marginLeft: 15,
+  },
+  adminOptionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  adminOptionSubtitle: {
+    fontSize: 13,
+    color: '#999',
+  },
+  adminStatsContainer: {
+    backgroundColor: '#252525',
+    padding: 15,
+    borderRadius: 12,
+    marginTop: 20,
+  },
+  adminStatsTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFD700',
+    marginBottom: 12,
+  },
+  adminStatRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  adminStatLabel: {
+    fontSize: 14,
+    color: '#ccc',
+  },
+  adminStatValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+  },
+
+  // Share Modal Styles
+  shareContentContainer: {
+    padding: 20,
+  },
+  shareSection: {
+    marginBottom: 30,
+  },
+  shareSectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 12,
+  },
+  inviteLinkContainer: {
+    backgroundColor: '#252525',
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 12,
+  },
+  inviteLinkText: {
+    color: '#8B2EF0',
+    fontSize: 14,
+  },
+  shareButtonsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  shareButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#333',
+    padding: 12,
+    borderRadius: 10,
+    gap: 8,
+  },
+  shareButtonPrimary: {
+    backgroundColor: '#8B2EF0',
+  },
+  shareButtonSecondary: {
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderColor: '#8B2EF0',
+  },
+  shareButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  qrCodeContainer: {
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  qrCodePlaceholder: {
+    width: 200,
+    height: 200,
+    backgroundColor: '#fff',
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  qrCodeText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#000',
+    marginTop: 10,
+  },
+  qrCodeSubtext: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 5,
+  },
+
+  // Members Modal Styles
+  membersListContainer: {
+    padding: 20,
+  },
+  memberItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#252525',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+  memberAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#333',
+  },
+  memberInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  memberName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  memberBadge: {
+    fontSize: 12,
+    color: '#FFD700',
+  },
+  kickButton: {
+    padding: 8,
+  },
+  emptyMembersContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  emptyMembersText: {
+    color: '#999',
+    fontSize: 14,
+  },
+
+  // Member Search Styles
+  memberSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  memberSearchInput: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 14,
+    paddingVertical: 0,
   },
 });
 

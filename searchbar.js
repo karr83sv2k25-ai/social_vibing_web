@@ -31,10 +31,11 @@ export default function HeaderWithSearch({ navigation }) {
         const data = docSnap.data();
         return {
           id: docSnap.id,
-          name: data.displayName || data.name || data.fullName || data.username || data.email || 'User',
-          email: data.email || '',
-          pic: data.profileImage || data.avatar || data.profile_image || data.photoURL || null,
-          username: data.username || '',
+          name: data.displayName || data.name || data.fullName || data.username || data.user_name || data.email || 'User',
+          email: data.email || data.user_email || '',
+          pic: data.profileImage || data.user_picture || data.avatar || data.profile_image || data.photoURL || null,
+          username: data.username || data.user_name || '',
+          bio: data.bio || data.user_biography || '',
         };
       });
       setUsers(usersData);
@@ -160,9 +161,9 @@ export default function HeaderWithSearch({ navigation }) {
                     const userSnap = await getDoc(userRef);
                     if (userSnap.exists()) {
                       const userData = userSnap.data();
-                      authorName = userData.displayName || userData.name || userData.username || 'User';
-                      authorImage = userData.profileImage || userData.avatar || null;
-                      username = userData.username || '';
+                      authorName = userData.displayName || userData.name || userData.username || userData.user_name || 'User';
+                      authorImage = userData.profileImage || userData.avatar || userData.user_picture || null;
+                      username = userData.username || userData.user_name || '';
                     }
                   } catch (e) {
                     console.log('Error fetching author:', e);
@@ -221,9 +222,9 @@ export default function HeaderWithSearch({ navigation }) {
                     const userSnap = await getDoc(userRef);
                     if (userSnap.exists()) {
                       const userData = userSnap.data();
-                      authorName = userData.displayName || userData.name || userData.username || 'User';
-                      authorImage = userData.profileImage || userData.avatar || null;
-                      username = userData.username || '';
+                      authorName = userData.displayName || userData.name || userData.username || userData.user_name || 'User';
+                      authorImage = userData.profileImage || userData.avatar || userData.user_picture || null;
+                      username = userData.username || userData.user_name || '';
                     }
                   } catch (e) {
                     console.log('Error fetching author:', e);
@@ -304,13 +305,19 @@ export default function HeaderWithSearch({ navigation }) {
       style={styles.userRow}
       onPress={() => navigation.navigate('Profile', { userId: item.id })}
     >
-      <Image 
-        source={item.pic ? { uri: item.pic } : require('./assets/a1.png')} 
-        style={styles.userPic} 
-      />
+      {item.pic ? (
+        <Image 
+          source={{ uri: item.pic }} 
+          style={styles.userPic} 
+        />
+      ) : (
+        <View style={[styles.userPic, { backgroundColor: '#E1E8ED', justifyContent: 'center', alignItems: 'center' }]}>
+          <Ionicons name="person" size={30} color="#657786" />
+        </View>
+      )}
       <View style={{ flex: 1, marginLeft: 15 }}>
         <Text style={styles.nameText}>{item.name}</Text>
-        <Text style={styles.subText}>{item.email || item.username || ''}</Text>
+        <Text style={styles.subText}>{item.bio || item.username || ''}</Text>
       </View>
       <TouchableOpacity 
         style={styles.visitButton}

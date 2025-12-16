@@ -81,9 +81,9 @@ export default function DraftScreen({ navigation }) {
                 const userSnapshot = await getDoc(userDocRef);
                 if (userSnapshot.exists()) {
                   const userData = userSnapshot.data();
-                  const fullName = [userData.firstName, userData.lastName].filter(Boolean).join(' ').trim();
-                  authorName = fullName || userData.displayName || userData.username || authorName;
-                  authorImage = userData.profileImage || userData.avatar || userData.photoURL || authorImage;
+                  const fullName = [userData.firstName || userData.user_firstname, userData.lastName || userData.user_lastname].filter(Boolean).join(' ').trim();
+                  authorName = fullName || userData.displayName || userData.username || userData.user_name || authorName;
+                  authorImage = userData.profileImage || userData.user_picture || userData.avatar || userData.photoURL || authorImage;
                 }
               } catch (profileError) {
                 console.log('⚠️  Could not load extended profile for draft author:', profileError.message);

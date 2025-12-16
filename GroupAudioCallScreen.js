@@ -88,7 +88,9 @@ export default function GroupAudioCallScreen() {
               userData.name ||
               userData.fullName ||
               userData.username ||
+              userData.user_name ||
               userData.firstName ||
+              userData.user_firstname ||
               auth.currentUser.displayName ||
               auth.currentUser.email?.split('@')[0] ||
               'User';

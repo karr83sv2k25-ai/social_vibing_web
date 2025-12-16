@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import { Ionicons, Entypo } from '@expo/vector-icons';
 import { Video } from 'expo-av';
+import { LinearGradient } from 'expo-linear-gradient';
 import { getAuth } from 'firebase/auth';
 import {
   getFirestore,
@@ -27,6 +28,7 @@ import {
   collection,
   getDocs,
   query,
+  where,
   orderBy,
   limit,
   runTransaction,
@@ -36,6 +38,7 @@ import {
   onSnapshot,
   serverTimestamp,
   increment,
+  arrayUnion,
 } from 'firebase/firestore';
 import { app, db } from './firebaseConfig';
 import NetInfo from '@react-native-community/netinfo';
@@ -45,11 +48,7 @@ const { width } = Dimensions.get('window');
 const IMAGE_WIDTH = 267;
 const SPACING = 10;
 
-const images = [
-  require('./assets/homebackground.jpg'),
-  require('./assets/homebackground.jpg'),
-  require('./assets/homebackground.jpg'),
-];
+// Top communities will be dynamically loaded
 
 const boxes = [
   {
@@ -77,7 +76,7 @@ const boxes = [
   },
 ];
 
-const buttons = ['ForYou', 'Following', 'Community', "Community's"];
+const buttons = ['Discovery', 'Following', 'Communities', 'Streaming'];
 
 const posts = [
   {
@@ -227,10 +226,16 @@ const Post = ({
           onPress={() => onProfilePress && post.authorId && onProfilePress(post.authorId)}
           activeOpacity={0.7}
         >
-          <Image
-            source={post.authorImage ? { uri: post.authorImage } : require('./assets/a1.png')}
-            style={styles.postProfileImage}
-          />
+          {post.authorImage ? (
+            <Image
+              source={{ uri: post.authorImage }}
+              style={styles.postProfileImage}
+            />
+          ) : (
+            <View style={[styles.postProfileImage, { backgroundColor: '#E1E8ED', justifyContent: 'center', alignItems: 'center' }]}>
+              <Ionicons name="person" size={30} color="#657786" />
+            </View>
+          )}
           <View style={{ marginLeft: 10 }}>
             <Text style={styles.postName}>{post.authorName || 'User'}</Text>
             <Text style={styles.postUsername}>
@@ -478,6 +483,100 @@ const Post = ({
         </View>
       )}
 
+      {/* Community Share */}
+      {post.type === 'community_share' && (
+        <View style={styles.communityShareContainer}>
+          <Text style={styles.postText}>{post.text}</Text>
+          <TouchableOpacity
+            style={styles.communityCard}
+            onPress={async () => {
+              if (post.communityId) {
+                // Check if user is already a member - if yes, go directly to community
+                // If no, navigate to Community screen for validation flow
+                try {
+                  const { getAuth } = await import('firebase/auth');
+                  const { collection, query, where, getDocs, doc, getDoc } = await import('firebase/firestore');
+                  const { db } = await import('./firebaseConfig');
+                  
+                  const auth = getAuth();
+                  if (auth.currentUser) {
+                    // Check membership
+                    const q = query(
+                      collection(db, 'communities_members'),
+                      where('user_id', '==', auth.currentUser.uid),
+                      where('community_id', '==', post.communityId)
+                    );
+                    const snap = await getDocs(q);
+                    
+                    if (!snap.empty) {
+                      // Already a member - go directly to community
+                      navigation.navigate('GroupInfo', { communityId: post.communityId });
+                      return;
+                    }
+                    
+                    // Check fallback membership format
+                    try {
+                      const membershipId = `${auth.currentUser.uid}_${post.communityId}`;
+                      const membershipDoc = await getDoc(doc(db, 'communities_members', membershipId));
+                      if (membershipDoc.exists()) {
+                        navigation.navigate('GroupInfo', { communityId: post.communityId });
+                        return;
+                      }
+                    } catch (e) {
+                      // Continue to validation flow
+                    }
+                  }
+                } catch (error) {
+                  console.log('Error checking membership:', error);
+                }
+                
+                // Not a member - show validation flow
+                navigation.navigate('Community', {
+                  openCommunityId: post.communityId,
+                  openCommunityData: {
+                    id: post.communityId,
+                    community_id: post.communityId,
+                    name: post.communityName,
+                    community_title: post.communityName,
+                    profileImage: post.communityImage,
+                    img: post.communityImage ? { uri: post.communityImage } : null,
+                    description: post.communityDescription,
+                    community_members: post.memberCount || 0,
+                  }
+                });
+              }
+            }}
+          >
+            {post.communityImage ? (
+              <Image
+                source={{ uri: post.communityImage }}
+                style={styles.communityCardImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={[styles.communityCardImage, styles.imageFallback]}>
+                <Ionicons name="people" size={40} color="#666" />
+              </View>
+            )}
+            <View style={styles.communityCardInfo}>
+              <Text style={styles.communityCardName}>{post.communityName || 'Community'}</Text>
+              {post.communityDescription ? (
+                <Text style={styles.communityCardDescription} numberOfLines={2}>
+                  {post.communityDescription}
+                </Text>
+              ) : null}
+              <View style={styles.communityCardStats}>
+                <Ionicons name="people" size={14} color="#888" />
+                <Text style={styles.communityCardStatsText}>
+                  {post.memberCount || 0} members
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#666" />
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Action Buttons */}
       <View style={styles.postFooter}>
         <TouchableOpacity
@@ -543,6 +642,9 @@ const HomeScreen = React.memo(({ navigation }) => {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [allImagesInPost, setAllImagesInPost] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [topCommunities, setTopCommunities] = useState([]);
+  const [joinedCommunities, setJoinedCommunities] = useState([]);
+  const [joiningCommunityId, setJoiningCommunityId] = useState(null);
 
   // Fetch current user
   useEffect(() => {
@@ -582,15 +684,15 @@ const HomeScreen = React.memo(({ navigation }) => {
             
             if (userSnap.exists()) {
               const userData = userSnap.data();
-              const fullName = [userData.firstName, userData.lastName].filter(Boolean).join(' ').trim();
-              const userName = fullName || userData.username || userData.displayName || userData.name || auth.currentUser.displayName || 'User';
-              const img = userData.profileImage || userData.profile_image || userData.profile_picture || userData.photoURL || null;
+              const fullName = [userData.firstName || userData.user_firstname, userData.lastName || userData.user_lastname].filter(Boolean).join(' ').trim();
+              const userName = fullName || userData.username || userData.user_name || userData.displayName || userData.name || auth.currentUser.displayName || 'User';
+              const img = userData.profileImage || userData.user_picture || userData.profile_image || userData.profile_picture || userData.photoURL || null;
               
               const userProfile = {
                 id: userId,
                 name: userName,
                 profileImage: img,
-                email: userData.email || auth.currentUser.email,
+                email: userData.email || userData.user_email || auth.currentUser.email,
                 ...userData
               };
               
@@ -622,6 +724,89 @@ const HomeScreen = React.memo(({ navigation }) => {
     };
   }, []);
 
+  // Fetch top 3 communities by member count
+  useEffect(() => {
+    const fetchTopCommunities = async () => {
+      try {
+        // Fetch all communities and sort by member count
+        const communitiesRef = collection(db, 'communities');
+        const communitiesSnapshot = await getDocs(communitiesRef);
+        
+        const communitiesList = [];
+        communitiesSnapshot.forEach((doc) => {
+          const data = doc.data();
+          const memberCount = data.members_count || 
+                            (Array.isArray(data.members) ? data.members.length : 0) ||
+                            (Array.isArray(data.community_members) ? data.community_members.length : 
+                             (typeof data.community_members === 'number' ? data.community_members : 0));
+          
+          communitiesList.push({
+            id: doc.id,
+            community_id: doc.id,
+            name: data.name || data.community_title || data.title || 'Community',
+            description: data.description || data.community_description || '',
+            category: data.category || data.community_category || '',
+            img: data.img || data.image || data.community_image || null,
+            memberCount,
+            members: data.members || []
+          });
+        });
+        
+        // Sort by member count and get top 3
+        const sortedCommunities = communitiesList.sort((a, b) => b.memberCount - a.memberCount).slice(0, 3);
+        setTopCommunities(sortedCommunities);
+      } catch (error) {
+        console.error('Error fetching top communities:', error);
+      }
+    };
+    
+    fetchTopCommunities();
+  }, []);
+
+  // Separate useEffect for joined communities listener - depends on user authentication
+  useEffect(() => {
+    const auth = getAuth(app);
+    let unsubscribe = null;
+    
+    // Only set up listener if user is authenticated
+    if (auth.currentUser) {
+      const userId = auth.currentUser.uid;
+      
+      try {
+        const membershipsQuery = query(
+          collection(db, 'communities_members'),
+          where('user_id', '==', userId)
+        );
+        
+        // Real-time listener for joined communities
+        unsubscribe = onSnapshot(membershipsQuery, (snapshot) => {
+          const joinedIds = snapshot.docs.map(doc => doc.data().community_id).filter(Boolean);
+          setJoinedCommunities(joinedIds);
+          console.log('✅ Updated joined communities:', joinedIds.length);
+        }, (error) => {
+          // Only log error if user is still authenticated
+          if (auth.currentUser) {
+            console.error('Error listening to joined communities:', error);
+          }
+          setJoinedCommunities([]);
+        });
+      } catch (error) {
+        console.error('Error setting up communities listener:', error);
+        setJoinedCommunities([]);
+      }
+    } else {
+      // Clear joined communities when user is not authenticated
+      setJoinedCommunities([]);
+    }
+    
+    // Cleanup listener on unmount or when auth state changes
+    return () => {
+      if (unsubscribe && typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, [currentUser]); // Re-run when currentUser changes (login/logout)
+
   const hasFetchedPosts = useRef(false);
 
   // Fetch all posts (global + community)
@@ -647,11 +832,11 @@ const HomeScreen = React.memo(({ navigation }) => {
         const userSnap = await getDoc(userRef);
         if (userSnap.exists()) {
           const userData = userSnap.data();
-          const fullName = [userData.firstName, userData.lastName].filter(Boolean).join(' ').trim();
+          const fullName = [userData.firstName || userData.user_firstname, userData.lastName || userData.user_lastname].filter(Boolean).join(' ').trim();
           const result = {
-            authorName: fullName || userData.displayName || userData.name || userData.username || 'User',
-            authorImage: userData.profileImage || userData.avatar || userData.profile_image || userData.photoURL || null,
-            username: userData.username || '',
+            authorName: fullName || userData.displayName || userData.name || userData.username || userData.user_name || 'User',
+            authorImage: userData.profileImage || userData.user_picture || userData.avatar || userData.profile_image || userData.photoURL || null,
+            username: userData.username || userData.user_name || '',
           };
           authorCache[authorId] = result;
           return result;
@@ -1049,7 +1234,7 @@ const HomeScreen = React.memo(({ navigation }) => {
     const tabName = buttons[activeButton];
 
     switch (tabName) {
-      case 'ForYou':
+      case 'Discovery':
         // Show all posts
         return allPosts;
       
@@ -1059,12 +1244,12 @@ const HomeScreen = React.memo(({ navigation }) => {
           post.authorId && followingUserIds.includes(post.authorId)
         );
       
-      case 'Community':
+      case 'Communities':
         // Show posts from communities the user has joined
         // For now, show all community posts (can be refined with membership data)
         return allPosts;
       
-      case "Community's":
+      case 'Streaming':
         // Show posts from specific communities
         // For now, show all posts (can be refined based on specific logic)
         return allPosts;
@@ -1689,6 +1874,58 @@ const HomeScreen = React.memo(({ navigation }) => {
     }
   };
 
+  const handleJoinCommunity = async (community) => {
+    const auth = getAuth(app);
+    if (!auth.currentUser) {
+      Alert.alert('Login Required', 'Please log in to join communities.');
+      return;
+    }
+
+    const communityId = community.community_id || community.id;
+    
+    // Check if already joined
+    if (joinedCommunities.includes(communityId)) {
+      // Navigate to GroupInfo if already joined
+      navigation.navigate('GroupInfo', { communityId });
+      return;
+    }
+
+    setJoiningCommunityId(communityId);
+
+    try {
+      const userId = auth.currentUser.uid;
+      const membershipId = `${userId}_${communityId}`;
+      const membershipRef = doc(db, 'communities_members', membershipId);
+      
+      await setDoc(membershipRef, {
+        user_id: userId,
+        community_id: communityId,
+        joinedAt: new Date().toISOString(),
+        validated: true,
+        role: 'member'
+      });
+
+      // Update community document
+      const communityRef = doc(db, 'communities', communityId);
+      await updateDoc(communityRef, {
+        members: arrayUnion(userId),
+        members_count: increment(1)
+      });
+
+      // Update local state
+      setJoinedCommunities(prev => [...prev, communityId]);
+
+      Alert.alert('Success', `You've joined ${community.name}!`, [
+        { text: 'OK', onPress: () => navigation.navigate('GroupInfo', { communityId }) }
+      ]);
+    } catch (error) {
+      console.error('Error joining community:', error);
+      Alert.alert('Error', 'Unable to join community. Please try again.');
+    } finally {
+      setJoiningCommunityId(null);
+    }
+  };
+
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchAllPosts(true);
@@ -1720,10 +1957,16 @@ const HomeScreen = React.memo(({ navigation }) => {
             style={{ flexDirection: 'row', alignItems: 'center' }}
           >
             
-              <Image
-                source={profileImage ? { uri: profileImage } : require('./assets/profile.png')}
-                style={[styles.profileImage, { borderColor: isConnected ? '#08FFE2' : '#666' }]}
-              />
+              {profileImage ? (
+                <Image
+                  source={{ uri: profileImage }}
+                  style={[styles.profileImage, { borderColor: isConnected ? '#08FFE2' : '#666' }]}
+                />
+              ) : (
+                <View style={[styles.profileImage, { borderColor: isConnected ? '#08FFE2' : '#666', backgroundColor: '#E1E8ED', justifyContent: 'center', alignItems: 'center' }]}>
+                  <Ionicons name="person" size={30} color="#657786" />
+                </View>
+              )}
             <View style={styles.profileTextContainer}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <Text style={styles.profileName}>{userName || 'User'}</Text>
@@ -1753,20 +1996,55 @@ const HomeScreen = React.memo(({ navigation }) => {
         </View>
       </View>
 
-      {/* Carousel */}
+      {/* Carousel - Top Communities */}
       <FlatList
-        data={images}
-        keyExtractor={(item, index) => index.toString()}
+        data={topCommunities}
+        keyExtractor={(item, index) => item.id || index.toString()}
         horizontal
         showsHorizontalScrollIndicator={false}
         snapToInterval={IMAGE_WIDTH + SPACING}
         decelerationRate="fast"
         contentContainerStyle={{ paddingHorizontal: (width - IMAGE_WIDTH) / 2 }}
-        renderItem={({ item }) => (
-          <View style={{ marginRight: SPACING }}>
-            <Image source={item} style={styles.image} />
-          </View>
-        )}
+        renderItem={({ item, index }) => {
+          const isJoined = joinedCommunities.includes(item.community_id || item.id);
+          const isJoining = joiningCommunityId === (item.community_id || item.id);
+          
+          return (
+            <TouchableOpacity 
+              style={{ marginRight: SPACING }}
+              onPress={() => handleJoinCommunity(item)}
+              activeOpacity={0.8}
+              disabled={isJoining}
+            >
+              <View style={styles.communityCard}>
+                <Image 
+                  source={item.img ? { uri: item.img } : require('./assets/homebackground.jpg')} 
+                  style={styles.image} 
+                />
+                <LinearGradient
+                  colors={['transparent', 'rgba(0,0,0,0.8)']}
+                  style={styles.communityOverlay}
+                >
+                  <View style={styles.communityBadge}>
+                    <Text style={styles.communityBadgeText}>{index + 1}</Text>
+                  </View>
+                  <View style={styles.communityInfo}>
+                    <Text style={styles.communityName} numberOfLines={1}>{item.name}</Text>
+                    <Text style={styles.communityMembers}>{item.memberCount} members</Text>
+                    {item.category && (
+                      <Text style={styles.communityCategory} numberOfLines={1}>{item.category}</Text>
+                    )}
+                    <View style={styles.communityJoinButton}>
+                      <Text style={styles.communityJoinText}>
+                        {isJoining ? 'Joining...' : isJoined ? 'Followed' : 'Join'}
+                      </Text>
+                    </View>
+                  </View>
+                </LinearGradient>
+              </View>
+            </TouchableOpacity>
+          );
+        }}
       />
 
       {/* Boxes Section */}
@@ -2260,6 +2538,81 @@ const styles = StyleSheet.create({
   iconButton: { marginLeft: 15 },
 
   image: { width: IMAGE_WIDTH, height: 111, borderRadius: 17, borderWidth: 1.5, borderColor: '#08FFE2', shadowColor: '#08FFE280', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 10.4, elevation: 5 },
+  
+  communityCard: { 
+    position: 'relative', 
+    width: IMAGE_WIDTH, 
+    height: 111, 
+    borderRadius: 17, 
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: '#08FFE2',
+    shadowColor: '#08FFE280',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 10.4,
+    elevation: 5,
+  },
+  communityOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    height: '100%',
+    justifyContent: 'space-between',
+  },
+  communityBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#BF2EF0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  communityBadgeText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  communityInfo: {
+    marginTop: 'auto',
+  },
+  communityName: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  communityMembers: {
+    color: '#08FFE2',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  communityCategory: {
+    color: '#ccc',
+    fontSize: 10,
+    marginTop: 2,
+  },
+  communityJoinButton: {
+    backgroundColor: '#BF2EF0',
+    borderRadius: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    alignSelf: 'flex-start',
+    marginTop: 6,
+  },
+  communityJoinText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
 
   boxesContainer: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10, paddingHorizontal: 20 },
   box: { width: 89, height: 89, borderRadius: 10.71, justifyContent: 'center', alignItems: 'center', padding: 5 },
@@ -2669,6 +3022,47 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: 10,
     marginTop: 12,
+  },
+  communityShareContainer: {
+    marginTop: 12,
+  },
+  communityCard: {
+    backgroundColor: '#1e1e1e',
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  communityCardImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    marginRight: 12,
+  },
+  communityCardInfo: {
+    flex: 1,
+  },
+  communityCardName: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  communityCardDescription: {
+    color: '#888',
+    fontSize: 13,
+    marginBottom: 4,
+  },
+  communityCardStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  communityCardStatsText: {
+    color: '#888',
+    fontSize: 12,
   },
   postFooter: { 
     flexDirection: 'row', 

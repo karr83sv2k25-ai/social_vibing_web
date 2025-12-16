@@ -218,12 +218,57 @@ export default function RoleplayScreen() {
 
       await setDoc(characterRef, characterData);
 
+      // Update session document with character info
+      const sessionRef = doc(db, 'roleplay_sessions', communityId, 'sessions', sessionId);
+      const sessionSnap = await getDoc(sessionRef);
+      
+      if (sessionSnap.exists()) {
+        const sessionData = sessionSnap.data();
+        const existingChars = sessionData.characters || [];
+        
+        // Update or add character to session
+        const charIndex = existingChars.findIndex(c => c.ownerId === currentUser.id);
+        const charSessionData = {
+          id: characterId,
+          ownerId: currentUser.id,
+          name: character.name,
+          avatar: character.imageUrl,
+          themeColor: character.frameColor || '#FFD700',
+          description: character.description || '',
+        };
+        
+        if (charIndex >= 0) {
+          existingChars[charIndex] = charSessionData;
+        } else {
+          existingChars.push(charSessionData);
+        }
+        
+        await updateDoc(sessionRef, {
+          characters: existingChars,
+          updatedAt: serverTimestamp(),
+        });
+      }
+
       setMyCharacterId(characterId);
       setCharacterName(character.name);
       setCharacterDescription(character.description || '');
       setCharacterImage(character.imageUrl);
       setFrameColor(character.frameColor || '#FFD700');
       setTextColor(character.textColor || '#1F2937');
+      
+      // Update participantCharacters state immediately
+      setParticipantCharacters(prev => ({
+        ...prev,
+        [currentUser.id]: {
+          id: characterId,
+          name: character.name,
+          imageUrl: character.imageUrl,
+          frameColor: character.frameColor || '#FFD700',
+          textColor: character.textColor || '#1F2937',
+          description: character.description || '',
+        }
+      }));
+      
       setShowCharacterSelector(false);
       
       Alert.alert(
@@ -269,7 +314,52 @@ export default function RoleplayScreen() {
 
       await setDoc(characterRef, characterData, { merge: true });
 
+      // Update session document with character info
+      const sessionRef = doc(db, 'roleplay_sessions', communityId, 'sessions', sessionId);
+      const sessionSnap = await getDoc(sessionRef);
+      
+      if (sessionSnap.exists()) {
+        const sessionData = sessionSnap.data();
+        const existingChars = sessionData.characters || [];
+        
+        // Update or add character to session
+        const charIndex = existingChars.findIndex(c => c.ownerId === currentUser.id);
+        const charSessionData = {
+          id: characterId,
+          ownerId: currentUser.id,
+          name: characterName.trim(),
+          avatar: characterImage,
+          themeColor: frameColor,
+          description: characterDescription.trim(),
+        };
+        
+        if (charIndex >= 0) {
+          existingChars[charIndex] = charSessionData;
+        } else {
+          existingChars.push(charSessionData);
+        }
+        
+        await updateDoc(sessionRef, {
+          characters: existingChars,
+          updatedAt: serverTimestamp(),
+        });
+      }
+
       setMyCharacterId(characterId);
+      
+      // Update participantCharacters state immediately
+      setParticipantCharacters(prev => ({
+        ...prev,
+        [currentUser.id]: {
+          id: characterId,
+          name: characterName.trim(),
+          imageUrl: characterImage,
+          frameColor: frameColor,
+          textColor: textColor,
+          description: characterDescription.trim(),
+        }
+      }));
+      
       setShowCharacterCustomization(false);
       
       Alert.alert(
@@ -490,11 +580,15 @@ export default function RoleplayScreen() {
             const sessionData = sessionSnap.data();
             setScenario(sessionData.scenario || '');
             setRoles(sessionData.roles || []);
-            setParticipants(sessionData.participants || []);
+            // Deduplicate participants by userId
+            const uniqueParticipants = (sessionData.participants || []).filter((participant, index, self) =>
+              index === self.findIndex(p => p.userId === participant.userId)
+            );
+            setParticipants(uniqueParticipants);
             setRoleplayCreatorId(sessionData.createdBy || null); // Set creator ID
 
             // Find user's role
-            const userParticipant = sessionData.participants?.find(p => p.userId === userId);
+            const userParticipant = uniqueParticipants.find(p => p.userId === userId);
             if (userParticipant) {
               setMyRole(userParticipant.role);
             } else if (selectedRole) {
@@ -542,7 +636,11 @@ export default function RoleplayScreen() {
     const unsubscribe = onSnapshot(sessionRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data();
-        setParticipants(data.participants || []);
+        // Deduplicate participants by userId
+        const uniqueParticipants = (data.participants || []).filter((participant, index, self) =>
+          index === self.findIndex(p => p.userId === participant.userId)
+        );
+        setParticipants(uniqueParticipants);
         setRoles(data.roles || []);
         setScenario(data.scenario || '');
         setRoleplayCreatorId(data.createdBy || null); // Update creator ID on changes
@@ -610,14 +708,21 @@ export default function RoleplayScreen() {
       // db is now imported globally
       const chatRef = collection(db, 'roleplay_sessions', communityId, 'sessions', sessionId, 'chat');
       
+      // Get current character data from participantCharacters
+      const currentCharacter = participantCharacters[currentUser.id];
+      const charImage = currentCharacter?.imageUrl || characterImage || currentUser.profileImage || null;
+      const charName = currentCharacter?.name || characterName || currentUser.name || 'User';
+      const charFrame = currentCharacter?.frameColor || frameColor || '#A855F7';
+      const charText = currentCharacter?.textColor || textColor || '#FFFFFF';
+      
       // Build message data without undefined values
       const messageData = {
         text: chatInput.trim(),
         senderId: currentUser.id,
-        senderName: characterName || currentUser.name || 'User',
-        senderImage: characterImage || currentUser.profileImage || null,
-        frameColor: frameColor || '#A855F7',
-        textColor: textColor || '#FFFFFF',
+        senderName: charName,
+        senderImage: charImage,
+        frameColor: charFrame,
+        textColor: charText,
         createdAt: serverTimestamp(),
       };
 
@@ -827,9 +932,32 @@ export default function RoleplayScreen() {
             </TouchableOpacity>
             <View style={styles.headerTextContainer}>
               <Text style={styles.headerTitle}>{groupTitle || 'Roleplay'}</Text>
-              <Text style={styles.headerSubtitle}>{participants.length} participants</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={styles.headerSubtitle}>{participants.length} participants</Text>
+                {participantCharacters[currentUser?.id] && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Text style={[styles.headerSubtitle, { fontSize: 11, opacity: 0.7 }]}>•</Text>
+                    <Text style={[styles.headerSubtitle, { fontSize: 11, fontWeight: '600' }]}>
+                      {participantCharacters[currentUser.id].name}
+                    </Text>
+                  </View>
+                )}
+              </View>
             </View>
-            <MaterialCommunityIcons name="drama-masks" size={28} color="#fff" />
+            <TouchableOpacity 
+              onPress={() => {
+                // Navigate back to groupinfo with switch character flag
+                navigation.navigate('GroupInfo', {
+                  communityId: communityId,
+                  openCharacterSelector: true,
+                  roleplaySessionId: sessionId,
+                  returnToRoleplay: true,
+                });
+              }}
+              style={styles.characterSwitchButton}
+            >
+              <MaterialCommunityIcons name="account-switch" size={24} color="#fff" />
+            </TouchableOpacity>
           </View>
         </LinearGradient>
 
@@ -842,7 +970,11 @@ export default function RoleplayScreen() {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.horizontalParticipantsContent}
             >
-              {participants.map((participant, index) => {
+              {participants
+                .filter((participant, index, self) => 
+                  index === self.findIndex(p => p.userId === participant.userId)
+                )
+                .map((participant, index) => {
                 const character = participantCharacters[participant.userId];
                 const characterImage = character?.imageUrl;
                 const displayName = character?.name || participant.userName;
@@ -851,7 +983,7 @@ export default function RoleplayScreen() {
                 
                 return (
                   <View 
-                    key={participant.userId} 
+                    key={`participant-${participant.userId}-${index}`} 
                     style={styles.horizontalParticipant}
                   >
                     {/* Crown icon ONLY for creator */}
@@ -956,6 +1088,10 @@ export default function RoleplayScreen() {
                   // Always use white text for maximum visibility
                   const msgTextColor = '#FFFFFF';
                   
+                  // Get character image for the sender
+                  const senderCharacter = participantCharacters[msg.senderId];
+                  const displayImage = senderCharacter?.imageUrl || msg.senderImage;
+                  
                   return (
                     <View
                       key={msg.id}
@@ -965,10 +1101,16 @@ export default function RoleplayScreen() {
                       ]}
                     >
                       {!isOwnMessage && (
-                        <Image
-                          source={msg.senderImage ? { uri: msg.senderImage } : require('./assets/a1.png')}
-                          style={styles.chatAvatar}
-                        />
+                        displayImage ? (
+                          <Image
+                            source={{ uri: displayImage }}
+                            style={styles.chatAvatar}
+                          />
+                        ) : (
+                          <View style={[styles.chatAvatar, { backgroundColor: '#E1E8ED', justifyContent: 'center', alignItems: 'center' }]}>
+                            <Ionicons name="person" size={20} color="#657786" />
+                          </View>
+                        )
                       )}
                       <View style={[
                         styles.chatBubble,
@@ -1361,14 +1503,18 @@ export default function RoleplayScreen() {
                     <Ionicons name="close" size={24} color="#fff" />
                   </TouchableOpacity>
                   <View style={styles.headerTextContainer}>
-                    <Text style={styles.headerTitle}>Select Character</Text>
-                    <Text style={styles.headerSubtitle}>Required to join roleplay</Text>
+                    <Text style={styles.headerTitle}>
+                      {participantCharacters[currentUser?.id] ? 'Switch Character' : 'Select Character'}
+                    </Text>
+                    <Text style={styles.headerSubtitle}>
+                      {participantCharacters[currentUser?.id] ? 'Change your roleplay character' : 'Required to join roleplay'}
+                    </Text>
                   </View>
                   <MaterialCommunityIcons name="account-group" size={28} color="#fff" />
                 </View>
               </LinearGradient>
 
-              <ScrollView style={styles.characterSelectorScroll}>
+              <View style={styles.characterSelectorContent}>
                 {loadingCharacters ? (
                   <View style={styles.loadingContainer}>
                     <ActivityIndicator size="large" color="#A855F7" />
@@ -1376,107 +1522,77 @@ export default function RoleplayScreen() {
                   </View>
                 ) : (
                   <>
-                    {/* Info Message */}
-                    <View style={styles.characterRequiredInfo}>
-                      <MaterialCommunityIcons name="drama-masks" size={24} color="#FFD700" />
-                      <Text style={styles.characterRequiredText}>
-                        Welcome to the roleplay! To participate, you need a character.
-                        {existingCharacters.length > 0 
-                          ? ' Choose one of your existing characters or create a new one for this roleplay.'
-                          : ' Create your character with a unique name, image, and appearance!'}
+                    {/* Title */}
+                    <View style={styles.startRoleplayHeader}>
+                      <Text style={styles.startRoleplayTitle}>Start Roleplay</Text>
+                      <Text style={styles.startRoleplaySubtitle}>
+                        Choose how you want to begin your roleplay session
                       </Text>
                     </View>
 
-                    {existingCharacters.length > 0 && (
-                      <>
-                        <Text style={styles.sectionLabel}>Use Existing Character</Text>
-                        <Text style={styles.sectionDescription}>
-                          Select a character you've already created
-                        </Text>
-                      </>
-                    )}
-
-                    {existingCharacters.map((character) => (
-                      <TouchableOpacity
-                        key={character.id}
-                        style={styles.existingCharacterCard}
-                        onPress={() => selectExistingCharacter(character)}
-                      >
-                        <View style={[
-                          styles.existingCharacterAvatar,
-                          { borderColor: character.frameColor || '#FFD700' }
-                        ]}>
-                          {character.imageUrl ? (
-                            <Image
-                              source={{ uri: character.imageUrl }}
-                              style={styles.existingCharacterImage}
-                            />
-                          ) : (
-                            <MaterialCommunityIcons
-                              name="account-circle"
-                              size={60}
-                              color="#666"
-                            />
-                          )}
-                        </View>
-                        <View style={styles.existingCharacterInfo}>
-                          <Text style={styles.existingCharacterName}>{character.name}</Text>
-                          {character.description && (
-                            <Text style={styles.existingCharacterDesc} numberOfLines={2}>
-                              {character.description}
-                            </Text>
-                          )}
-                          <View style={styles.characterColorPreview}>
-                            <View
-                              style={[
-                                styles.colorPreviewDot,
-                                { backgroundColor: character.frameColor || '#FFD700' }
-                              ]}
-                            />
-                            <View
-                              style={[
-                                styles.colorPreviewDot,
-                                { backgroundColor: character.textColor || '#1F2937' }
-                              ]}
-                            />
-                          </View>
-                        </View>
-                        <Ionicons name="chevron-forward" size={24} color="#999" />
-                      </TouchableOpacity>
-                    ))}
-
-                    {existingCharacters.length > 0 && (
-                      <>
-                        <View style={styles.dividerContainer}>
-                          <View style={styles.dividerLine} />
-                          <Text style={styles.dividerText}>OR</Text>
-                          <View style={styles.dividerLine} />
-                        </View>
-                        <Text style={styles.sectionLabel}>Create New Character</Text>
-                        <Text style={styles.sectionDescription}>
-                          Design a brand new character for this roleplay
-                        </Text>
-                      </>
-                    )}
-
+                    {/* Create New Character Option */}
                     <TouchableOpacity
-                      style={styles.createNewCharacterButton}
+                      style={styles.miniScreenOption}
                       onPress={() => {
                         setShowCharacterSelector(false);
                         setShowCharacterCustomization(true);
                       }}
                     >
-                      <MaterialCommunityIcons name="plus-circle" size={32} color="#A855F7" />
-                      <View>
-                        <Text style={styles.createNewCharacterText}>Create New Character</Text>
-                        <Text style={styles.createNewCharacterSubtext}>
-                          Customize name, image, and colors
+                      <View style={styles.miniScreenIconContainer}>
+                        <View style={styles.miniScreenIcon}>
+                          <MaterialCommunityIcons name="account-plus" size={36} color="#FFD700" />
+                        </View>
+                      </View>
+                      <View style={styles.miniScreenTextContainer}>
+                        <Text style={styles.miniScreenTitle}>Create New Character</Text>
+                        <Text style={styles.miniScreenSubtitle}>
+                          Create a brand new character with custom attributes
                         </Text>
                       </View>
+                      <Ionicons name="chevron-forward" size={24} color="rgba(255,255,255,0.5)" />
                     </TouchableOpacity>
+
+                    {/* Use Existing Characters - Show as expandable list */}
+                    {existingCharacters.length > 0 && (
+                      <View style={{ marginTop: 20 }}>
+                        <Text style={styles.existingCharactersHeader}>Your Characters</Text>
+                        <ScrollView 
+                          horizontal 
+                          showsHorizontalScrollIndicator={false}
+                          contentContainerStyle={{ paddingVertical: 12 }}
+                        >
+                          {existingCharacters.map((character, idx) => (
+                            <TouchableOpacity
+                              key={`char-${character.id}-${idx}`}
+                              style={styles.characterMiniCard}
+                              onPress={() => selectExistingCharacter(character)}
+                            >
+                              <View style={[
+                                styles.characterMiniAvatar,
+                                { borderColor: character.frameColor || '#FFD700' }
+                              ]}>
+                                {character.imageUrl ? (
+                                  <Image
+                                    source={{ uri: character.imageUrl }}
+                                    style={styles.characterMiniImage}
+                                  />
+                                ) : (
+                                  <View style={[styles.characterMiniImage, { backgroundColor: '#E1E8ED', justifyContent: 'center', alignItems: 'center' }]}>
+                                    <Ionicons name="person" size={32} color="#657786" />
+                                  </View>
+                                )}
+                              </View>
+                              <Text style={styles.characterMiniName} numberOfLines={1}>
+                                {character.name}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </ScrollView>
+                      </View>
+                    )}
                   </>
                 )}
-              </ScrollView>
+              </View>
             </SafeAreaView>
           </LinearGradient>
         </Modal>
@@ -1530,6 +1646,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: 'rgba(255,255,255,0.8)',
     marginTop: 2,
+  },
+  characterSwitchButton: {
+    padding: 8,
+    marginLeft: 8,
   },
   scenarioContainer: {
     margin: 16,
@@ -2109,6 +2229,94 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#333',
+  },
+  characterSelectorContent: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 30,
+  },
+  startRoleplayHeader: {
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  startRoleplayTitle: {
+    fontSize: 26,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 8,
+  },
+  startRoleplaySubtitle: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.6)',
+    textAlign: 'center',
+    paddingHorizontal: 20,
+  },
+  miniScreenOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(45, 27, 78, 0.6)',
+    padding: 20,
+    borderRadius: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(124, 58, 237, 0.3)',
+  },
+  miniScreenIconContainer: {
+    marginRight: 16,
+  },
+  miniScreenIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 215, 0, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  miniScreenTextContainer: {
+    flex: 1,
+    marginRight: 8,
+  },
+  miniScreenTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  miniScreenSubtitle: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.5)',
+    lineHeight: 18,
+  },
+  existingCharactersHeader: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: 8,
+  },
+  characterMiniCard: {
+    alignItems: 'center',
+    marginRight: 16,
+    width: 90,
+  },
+  characterMiniAvatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 3,
+    padding: 2,
+    backgroundColor: 'rgba(26, 10, 46, 0.8)',
+  },
+  characterMiniImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 37,
+  },
+  characterMiniName: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 8,
+    textAlign: 'center',
   },
   createNewCharacterButton: {
     flexDirection: 'row',

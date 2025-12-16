@@ -73,10 +73,10 @@ export default function EditProfileScreen({ navigation }) {
           if (userDoc.exists()) {
             const data = userDoc.data();
             setUserData(data);
-            setBio(data.bio || '');
+            setBio(data.bio || data.user_biography || '');
             setName({
-              firstName: data.firstName || '',
-              lastName: data.lastName || ''
+              firstName: data.firstName || data.user_firstname || '',
+              lastName: data.lastName || data.user_lastname || ''
             });
             setUsername(data.username || '');
           }

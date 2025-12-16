@@ -3,6 +3,7 @@
     "@expo-google-fonts/manrope": "*",
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-native-clipboard/clipboard": "github:react-native-clipboard/clipboard",
     "@react-native-community/datetimepicker": "8.4.4",
     "@react-native-community/netinfo": "^11.4.1",
     "@react-native-firebase/app": "21.8.0",

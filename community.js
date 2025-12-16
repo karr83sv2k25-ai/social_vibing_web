@@ -15,6 +15,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import NetInfo from '@react-native-community/netinfo';
+import { useFocusEffect } from '@react-navigation/native';
 import { 
   collection, 
   query, 
@@ -68,7 +69,7 @@ const CommunityCard = React.memo(({ item, idx, onPress, showFollowedBadge, isJoi
   </TouchableOpacity>
 ));
 
-export default function TopBar({ navigation }) {
+export default function TopBar({ navigation, route }) {
   // validation modal state
   const [showValidationModal, setShowValidationModal] = useState(false);
   const [validationStep, setValidationStep] = useState(0); // 0,1,2
@@ -544,6 +545,25 @@ export default function TopBar({ navigation }) {
     };
   }, [auth.currentUser?.uid]);
 
+  // Handle navigation from shared community posts using useFocusEffect
+  useFocusEffect(
+    useCallback(() => {
+      if (route?.params?.openCommunityId && route?.params?.openCommunityData) {
+        // Small delay to ensure component is mounted and ready
+        const timer = setTimeout(() => {
+          const communityData = route.params.openCommunityData;
+          console.log('Opening validation for community:', communityData.name || communityData.community_title);
+          openValidationFor(communityData);
+          
+          // Clear the params after handling to prevent reopening
+          navigation.setParams({ openCommunityId: undefined, openCommunityData: undefined });
+        }, 150);
+        
+        return () => clearTimeout(timer);
+      }
+    }, [route?.params?.openCommunityId, route?.params?.openCommunityData])
+  );
+
   // Network connectivity listener: show Online/Offline based on device connectivity
   useEffect(() => {
     let mounted = true;
@@ -576,10 +596,21 @@ export default function TopBar({ navigation }) {
             >
               <Text style={styles.modalTitle}>{validationStep === 0 ? `Welcome to\n${selectedCommunityForValidation?.name || selectedCommunityForValidation?.community_title || 'Community'}` : validationStep === 1 ? 'Start connecting with other members' : 'All Set!'}</Text>
 
-              {selectedCommunityForValidation?.profileImage || selectedCommunityForValidation?.img ? (
-                <Image source={selectedCommunityForValidation?.profileImage ? { uri: selectedCommunityForValidation.profileImage } : selectedCommunityForValidation.img} style={styles.modalAvatar} />
+              {selectedCommunityForValidation?.profileImage || (selectedCommunityForValidation?.img?.uri) ? (
+                <Image 
+                  source={
+                    selectedCommunityForValidation?.profileImage 
+                      ? { uri: selectedCommunityForValidation.profileImage } 
+                      : selectedCommunityForValidation?.img?.uri 
+                        ? { uri: selectedCommunityForValidation.img.uri }
+                        : selectedCommunityForValidation.img
+                  } 
+                  style={styles.modalAvatar} 
+                />
               ) : (
-                <Image source={require('./assets/a1.png')} style={styles.modalAvatar} />
+                <View style={[styles.modalAvatar, { backgroundColor: '#E1E8ED', justifyContent: 'center', alignItems: 'center' }]}>
+                  <Ionicons name="people" size={44} color="#657786" />
+                </View>
               )}
 
               <Text style={styles.modalText} numberOfLines={4}>{validationStep === 0 ? 'Hello and welcome to our community! Please read the community guidelines before getting started.' : validationStep === 1 ? 'Follow a few members to start connecting — you can follow more later.' : 'You have completed the quick setup. Tap below to open the community.'}</Text>
@@ -772,7 +803,7 @@ export default function TopBar({ navigation }) {
                     <TouchableOpacity
                       key={item.community_id || item.id || idx.toString()}
                       style={styles.eventCardGrid}
-                      onPress={() => navigation.navigate('EditCommunity', { communityId: item.community_id || item.id })}
+                      onPress={() => navigation.navigate('GroupInfo', { communityId: item.community_id || item.id })}
                       activeOpacity={0.8}
                     >
                       <View style={{ position: 'relative' }}>

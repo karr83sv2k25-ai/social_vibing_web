@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { doc, getDoc } from 'firebase/firestore';
 import { app, db } from './firebaseConfig';
 
@@ -99,7 +100,13 @@ export default function CommunityDetail({ route, navigation }) {
 
       <View style={styles.content}>
         <View style={styles.headerRow}>
-          <Image source={profileImage ? { uri: profileImage } : require('./assets/profile.png')} style={styles.avatar} />
+          {profileImage ? (
+            <Image source={{ uri: profileImage }} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatar, { backgroundColor: '#E1E8ED', justifyContent: 'center', alignItems: 'center' }]}>
+              <Ionicons name="person" size={40} color="#657786" />
+            </View>
+          )}
           <View style={{ marginLeft: 12, flex: 1 }}>
             <Text style={styles.title}>{name || community.title || 'Community'}</Text>
             <Text style={styles.sub}>{category || ''} • {memberCount} members</Text>

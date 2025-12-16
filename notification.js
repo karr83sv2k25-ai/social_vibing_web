@@ -62,27 +62,45 @@ export default function NotificationScreen({ navigation }) {
       return;
     }
 
-    // Query notifications for current user
-    const notificationsRef = collection(db, 'notifications');
-    const notificationsQuery = query(
-      notificationsRef,
-      where('recipientId', '==', currentUser.uid),
-      orderBy('createdAt', 'desc')
-    );
+    // Query notifications from user's subcollection
+    const notificationsRef = collection(db, 'users', currentUser.uid, 'notifications');
 
     const unsubscribe = onSnapshot(
-      notificationsQuery,
+      notificationsRef,
       (snapshot) => {
-        const fetchedNotifications = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-          createdAt: doc.data().createdAt?.toDate?.() || new Date(),
-        }));
-        setNotifications(fetchedNotifications);
+        console.log(`🔔 Notifications snapshot received: ${snapshot.size} notifications`);
+        
+        const fetchedNotifications = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          // Handle both ISO string and Firestore timestamp
+          let createdAt = new Date();
+          if (data.createdAt) {
+            if (typeof data.createdAt === 'string') {
+              createdAt = new Date(data.createdAt);
+            } else if (data.createdAt.toDate) {
+              createdAt = data.createdAt.toDate();
+            }
+          }
+          
+          return {
+            id: doc.id,
+            ...data,
+            createdAt,
+          };
+        });
+        
+        // Sort by createdAt descending (newest first) on client side
+        const sortedNotifications = fetchedNotifications.sort((a, b) => {
+          return b.createdAt.getTime() - a.createdAt.getTime();
+        });
+        
+        console.log(`✅ Loaded and sorted ${sortedNotifications.length} notifications`);
+        setNotifications(sortedNotifications);
         setLoading(false);
       },
       (error) => {
-        console.log('Error fetching notifications:', error);
+        console.error('❌ Error fetching notifications:', error);
+        console.error('Error details:', error.message);
         setLoading(false);
       }
     );
@@ -152,13 +170,20 @@ export default function NotificationScreen({ navigation }) {
 
   const { todayNotifs, yesterdayNotifs, lastWeekNotifs } = groupNotificationsByTime();
   const renderNotification = ({ item }) => {
-    const isFollowing = followingIds.includes(item.senderId);
-    const isFollowBusy = followLoading.includes(item.senderId);
+    // Support both old (senderId) and new (fromUserId) field names
+    const userId = item.fromUserId || item.senderId;
+    const userName = item.fromUserName || item.senderName;
+    const userImage = item.fromUserImage || item.senderImage;
+    
+    const isFollowing = followingIds.includes(userId);
+    const isFollowBusy = followLoading.includes(userId);
 
     const getActionText = () => {
       switch (item.type) {
         case 'follow':
           return 'started following you';
+        case 'unfollow':
+          return 'unfollowed you';
         case 'like':
           return 'liked your post';
         case 'comment':
@@ -166,29 +191,36 @@ export default function NotificationScreen({ navigation }) {
         case 'mention':
           return 'mentioned you';
         default:
-          return item.action || 'interacted with your content';
+          return item.message || item.action || 'interacted with your content';
       }
     };
 
-    if (item.type === 'follow') {
+    if (item.type === 'follow' || item.type === 'unfollow') {
       return (
-        <View style={styles.notificationItem}>
+        <TouchableOpacity 
+          style={styles.notificationItem}
+          onPress={() => navigation.navigate('Profile', { userId })}
+          activeOpacity={0.8}
+        >
           <Image
             source={
-              item.senderImage
-                ? { uri: item.senderImage }
+              userImage
+                ? { uri: userImage }
                 : require('./assets/profile.png')
             }
             style={styles.profileImage}
           />
           <View style={styles.textContainer}>
             <Text style={styles.notificationText}>
-              <Text style={styles.userName}>{item.senderName || 'User'} </Text>
+              <Text style={styles.userName}>{userName || 'User'} </Text>
               {getActionText()}
             </Text>
           </View>
           <TouchableOpacity
-            onPress={() => handleFollow(item.senderId)}
+            onPress={(e) => {
+              e.stopPropagation();
+              handleFollow(userId);
+            }}
             disabled={isFollowBusy}
           >
             <LinearGradient
@@ -210,30 +242,34 @@ export default function NotificationScreen({ navigation }) {
               )}
             </LinearGradient>
           </TouchableOpacity>
-        </View>
+        </TouchableOpacity>
       );
     }
 
     return (
-      <View style={styles.notificationItem}>
+      <TouchableOpacity 
+        style={styles.notificationItem}
+        onPress={() => navigation.navigate('Profile', { userId })}
+        activeOpacity={0.8}
+      >
         <Image
           source={
-            item.senderImage
-              ? { uri: item.senderImage }
+            userImage
+              ? { uri: userImage }
               : require('./assets/profile.png')
           }
           style={styles.profileImage}
         />
         <View style={styles.textContainer}>
           <Text style={styles.notificationText}>
-            <Text style={styles.userName}>{item.senderName || 'User'} </Text>
+            <Text style={styles.userName}>{userName || 'User'} </Text>
             {getActionText()}
           </Text>
         </View>
         {item.postImage && (
           <Image source={{ uri: item.postImage }} style={styles.postImage} />
         )}
-      </View>
+      </TouchableOpacity>
     );
   };
 

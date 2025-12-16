@@ -2,8 +2,9 @@ import * as React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
-import { View, ActivityIndicator, Text, LogBox } from 'react-native';
+import { View, ActivityIndicator, Text, LogBox, AppState } from 'react-native';
 import { app as firebaseApp, db } from './firebaseConfig';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 
 // Suppress known Firestore SDK internal errors in development
 LogBox.ignoreLogs([
@@ -109,6 +110,11 @@ import CreatePollScreen from './CreatePollScreen';
 import CreateQuizScreen from './CreateQuizScreen';
 import DraftScreen from './DraftScreen';
 import CreateQuestionScreen from './CreateQuestionScreen';
+import CommunityCreateGroupScreen from './screens/CommunityCreateGroupScreen';
+import CommunityGroupChatScreen from './screens/CommunityGroupChatScreen';
+import GroupDetailsScreen from './screens/GroupDetailsScreen';
+import FollowersFollowingScreen from './screens/FollowersFollowingScreen';
+import TestFollowersScreen from './screens/TestFollowersScreen';
 
 const Stack = createStackNavigator();
 
@@ -130,13 +136,71 @@ export default function App() {
 
   React.useEffect(() => {
     const auth = getAuth(firebaseApp);
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    
+    // Handle auth state changes
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       console.log('🔐 Auth state changed:', user ? `User logged in: ${user.email}` : 'No user logged in');
       setUser(user);
+      
+      // Set user online when logged in
+      if (user) {
+        try {
+          const userRef = doc(db, 'users', user.uid);
+          await updateDoc(userRef, {
+            isOnline: true,
+            lastSeen: serverTimestamp()
+          });
+        } catch (error) {
+          console.log('Error setting online status:', error);
+        }
+      }
+      
       if (initializing) setInitializing(false);
     });
 
-    return unsubscribe;
+    // Handle app state changes (foreground/background)
+    const appStateSubscription = AppState.addEventListener('change', async (nextAppState) => {
+      const currentUser = auth.currentUser;
+      if (!currentUser) return;
+
+      try {
+        const userRef = doc(db, 'users', currentUser.uid);
+        
+        if (nextAppState === 'active') {
+          // App came to foreground - set online
+          await updateDoc(userRef, {
+            isOnline: true,
+            lastSeen: serverTimestamp()
+          });
+          console.log('📱 App active - User online');
+        } else if (nextAppState === 'background' || nextAppState === 'inactive') {
+          // App went to background - set offline
+          await updateDoc(userRef, {
+            isOnline: false,
+            lastSeen: serverTimestamp()
+          });
+          console.log('📱 App background - User offline');
+        }
+      } catch (error) {
+        console.log('Error updating app state status:', error);
+      }
+    });
+
+    // Cleanup function
+    return () => {
+      unsubscribeAuth();
+      appStateSubscription?.remove();
+      
+      // Set user offline when component unmounts
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        const userRef = doc(db, 'users', currentUser.uid);
+        updateDoc(userRef, {
+          isOnline: false,
+          lastSeen: serverTimestamp()
+        }).catch(err => console.log('Error setting offline on unmount:', err));
+      }
+    };
   }, []);
 
   if (initializing) {
@@ -209,6 +273,11 @@ export default function App() {
              <Stack.Screen name="CreateQuiz" component={CreateQuizScreen} options={{ headerShown: false }}/>
              <Stack.Screen name="Draft" component={DraftScreen} options={{ headerShown: false }}/>
              <Stack.Screen name="CreateQuestion" component={CreateQuestionScreen} options={{ headerShown: false }}/>
+             <Stack.Screen name="CommunityCreateGroup" component={CommunityCreateGroupScreen} options={{ headerShown: false }}/>
+             <Stack.Screen name="CommunityGroupChat" component={CommunityGroupChatScreen} options={{ headerShown: false }}/>
+             <Stack.Screen name="GroupDetails" component={GroupDetailsScreen} options={{ headerShown: false }}/>
+             <Stack.Screen name="FollowersFollowing" component={FollowersFollowingScreen} options={{ headerShown: false }}/>
+             <Stack.Screen name="TestFollowers" component={TestFollowersScreen} options={{ headerShown: false }}/>
       </Stack.Navigator>
     </NavigationContainer>
   );

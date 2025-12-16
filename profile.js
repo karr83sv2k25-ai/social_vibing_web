@@ -15,7 +15,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { getAuth, signOut } from "firebase/auth";
-import { doc, onSnapshot, updateDoc, increment, collection, getDocs, query, where } from "firebase/firestore";
+import { doc, onSnapshot, updateDoc, increment, collection, getDocs, query, where, getDoc, setDoc, deleteDoc } from "firebase/firestore";
 import { app, db } from "./firebaseConfig";
 import CacheManager from "./cacheManager";
 
@@ -43,11 +43,11 @@ const Pill = ({ label }) => (
   </View>
 );
 
-const Stat = ({ value, label }) => (
-  <View style={{ alignItems: "center", width: 68 }}>
+const Stat = ({ value, label, onPress }) => (
+  <TouchableOpacity onPress={onPress} style={{ alignItems: "center", width: 68 }} activeOpacity={onPress ? 0.7 : 1} disabled={!onPress}>
     <Text style={{ color: C.text, fontWeight: "700", fontSize: 16 }}>{value}</Text>
     <Text style={{ color: C.dim, fontSize: 12 }}>{label}</Text>
-  </View>
+  </TouchableOpacity>
 );
 
 const ListRow = ({ title, onPress }) => (
@@ -56,22 +56,6 @@ const ListRow = ({ title, onPress }) => (
     <Feather name="chevron-right" size={20} color={C.dim} />
   </TouchableOpacity>
 );
-
-const RewardDot = ({ day, state = "done" }) => {
-  let fill = C.border;
-  if (state === "done") fill = C.gold;
-  else if (state === "today") fill = C.cyan;
-  else if (state === "missed") fill = "#3A3F49";
-  else fill = C.border;
-  return (
-    <View style={{ alignItems: "center", width: 52 }}>
-      <View style={[styles.rewardDot, { backgroundColor: fill }]}>
-        <Image source={require("./assets/goldicon.png")} style={styles.rewardIcon} />
-      </View>
-      <Text style={{ color: C.text, fontSize: 11, marginTop: 6 }}>{day}</Text>
-    </View>
-  );
-};
 
 /* --------- MAIN COMPONENT --------- */
 export default function ProfileScreen() {
@@ -83,9 +67,8 @@ export default function ProfileScreen() {
   const [isOwnProfile, setIsOwnProfile] = useState(false);
   const [followingCount, setFollowingCount] = useState(0);
   const [followersCount, setFollowersCount] = useState(0);
-  const [lastClaimDate, setLastClaimDate] = useState(null);
-  const [canClaimToday, setCanClaimToday] = useState(false);
-  const [claimingReward, setClaimingReward] = useState(false);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followLoading, setFollowLoading] = useState(false);
   const [targetUserId, setTargetUserId] = useState(null);
   const [stories, setStories] = useState([]);
   const [storiesLoading, setStoriesLoading] = useState(false);
@@ -146,23 +129,7 @@ export default function ProfileScreen() {
     const ownProfile = currentUser && resolvedUserId === currentUser.uid;
     setIsOwnProfile(ownProfile);
 
-    // Check if user can claim today's reward
-    const checkClaimStatus = (userDoc) => {
-      const lastClaim = userDoc.lastRewardClaim?.toDate?.() || userDoc.lastRewardClaim;
-      setLastClaimDate(lastClaim);
-      
-      if (!lastClaim) {
-        setCanClaimToday(true);
-        return;
-      }
-      
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const lastClaimDay = new Date(lastClaim);
-      lastClaimDay.setHours(0, 0, 0, 0);
-      
-      setCanClaimToday(today > lastClaimDay);
-    };
+    // Removed daily rewards check
 
     const userRef = doc(db, 'users', resolvedUserId);
 
@@ -186,10 +153,9 @@ export default function ProfileScreen() {
         if (snap.exists()) {
           const data = snap.data();
           setUserData(data);
-          checkClaimStatus(data);
           
           // Cache the profile data
-          await CacheManager.saveUserProfile(targetUserId, data);
+          await CacheManager.saveUserProfile(resolvedUserId, data);
           
           // Use counts from user document if available (much faster)
           setFollowingCount(data.followingCount || 0);
@@ -223,6 +189,41 @@ export default function ProfileScreen() {
         setLoading(false);
       }
     );
+    
+    // Real-time listener for followers count
+    const followersRef = collection(db, 'users', resolvedUserId, 'followers');
+    const unsubscribeFollowers = onSnapshot(followersRef, (snapshot) => {
+      const count = snapshot.size;
+      console.log(`👥 Followers count updated: ${count} for user ${resolvedUserId}`);
+      setFollowersCount(count);
+      // Update user document with latest count
+      updateDoc(userRef, { followersCount: count }).catch(() => {});
+    }, (error) => {
+      console.log('Error listening to followers:', error);
+    });
+    
+    // Real-time listener for following count
+    const followingRef = collection(db, 'users', resolvedUserId, 'following');
+    const unsubscribeFollowing = onSnapshot(followingRef, (snapshot) => {
+      const count = snapshot.size;
+      console.log(`👤 Following count updated: ${count} for user ${resolvedUserId}`);
+      setFollowingCount(count);
+      // Update user document with latest count
+      updateDoc(userRef, { followingCount: count }).catch(() => {});
+    }, (error) => {
+      console.log('Error listening to following:', error);
+    });
+    
+    // Check if current user is following this profile
+    let unsubscribeIsFollowing = null;
+    if (!ownProfile && currentUser) {
+      const myFollowingRef = doc(db, 'users', currentUser.uid, 'following', resolvedUserId);
+      unsubscribeIsFollowing = onSnapshot(myFollowingRef, (docSnap) => {
+        const exists = docSnap.exists();
+        console.log(`👁️ Following status check: ${exists ? 'Following' : 'Not following'}`);
+        setIsFollowing(exists);
+      });
+    }
 
     // Increment visit count only when viewing other user's profile (not own profile)
     if (!ownProfile && currentUser) {
@@ -235,62 +236,113 @@ export default function ProfileScreen() {
       })();
     }
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      unsubscribeFollowers();
+      unsubscribeFollowing();
+      if (unsubscribeIsFollowing) {
+        unsubscribeIsFollowing();
+      }
+    };
   }, [userId]);
 
-  // Handle daily reward claim
-  const handleClaimReward = async () => {
-    if (!isOwnProfile || !canClaimToday || claimingReward) {
-      if (!canClaimToday) {
-        Alert.alert('Already Claimed', 'You have already claimed your reward today. Come back tomorrow!');
-      }
-      return;
-    }
+  // Removed daily rewards functionality
 
+  // Handle follow/unfollow
+  const handleFollowToggle = async () => {
+    const auth = getAuth(app);
+    const currentUser = auth.currentUser;
+    
+    if (!currentUser || !targetUserId || isOwnProfile || followLoading) return;
+    
+    setFollowLoading(true);
+    console.log(`🔄 Toggling follow for user: ${targetUserId}`);
+    console.log(`👤 Current user: ${currentUser.uid}`);
+    console.log(`🎯 Target user: ${targetUserId}`);
+    
     try {
-      setClaimingReward(true);
-      const auth = getAuth(app);
-      const currentUser = auth.currentUser;
+      const followDocRef = doc(db, 'users', currentUser.uid, 'following', targetUserId);
+      const followerDocRef = doc(db, 'users', targetUserId, 'followers', currentUser.uid);
+      const currentUserRef = doc(db, 'users', currentUser.uid);
+      const targetUserRef = doc(db, 'users', targetUserId);
       
-      if (!currentUser) {
-        Alert.alert('Error', 'Please login to claim rewards');
-        return;
-      }
-
-      const userRef = doc(db, 'users', currentUser.uid);
+      console.log(`📄 Follow doc path: users/${currentUser.uid}/following/${targetUserId}`);
+      console.log(`📄 Follower doc path: users/${targetUserId}/followers/${currentUser.uid}`);
       
-      // Update user's coins and last claim date
-      await updateDoc(userRef, {
-        coins: increment(50), // Give 50 coins as daily reward
-        lastRewardClaim: new Date(),
-        totalRewardsClaimed: increment(1)
-      });
-
-      // Update local state
-      setCanClaimToday(false);
-      setLastClaimDate(new Date());
-      
-      // Show success message
-      Alert.alert(
-        'Reward Claimed!',
-        'You received 50 coins! Keep your streak going by claiming tomorrow.',
-        [{ text: 'Awesome!', style: 'default' }]
-      );
-      
-      // Update user data to reflect new coin balance
-      if (userData) {
-        setUserData(prev => ({
-          ...prev,
-          coins: (prev.coins || 0) + 50,
-          lastRewardClaim: new Date(),
-          totalRewardsClaimed: (prev.totalRewardsClaimed || 0) + 1
-        }));
+      if (isFollowing) {
+        // Unfollow
+        console.log('❌ Unfollowing user');
+        await deleteDoc(followDocRef);
+        await deleteDoc(followerDocRef);
+        await updateDoc(currentUserRef, { followingCount: increment(-1) });
+        await updateDoc(targetUserRef, { followersCount: increment(-1) });
+        
+        console.log('✅ Unfollow action completed successfully!');
+        console.log(`📋 Updated following count for ${currentUser.uid}`);
+        console.log(`📋 Updated followers count for ${targetUserId}`);
+        
+        // Send unfollow notification
+        try {
+          const currentUserDoc = await getDoc(currentUserRef);
+          const currentUserData = currentUserDoc.data() || {};
+          const notificationsRef = collection(db, 'users', targetUserId, 'notifications');
+          await setDoc(doc(notificationsRef, `${currentUser.uid}_unfollow_${Date.now()}`), {
+            type: 'unfollow',
+            fromUserId: currentUser.uid,
+            fromUserName: currentUserData.name || currentUserData.displayName || 'User',
+            fromUserImage: currentUserData.profileImage || currentUserData.avatar || null,
+            message: `${currentUserData.name || currentUserData.displayName || 'Someone'} unfollowed you`,
+            createdAt: new Date().toISOString(),
+            read: false,
+          });
+        } catch (e) {
+          console.log('⚠️ Notification error:', e);
+        }
+        
+        setIsFollowing(false);
+      } else {
+        // Follow
+        console.log('✅ Following user');
+        await setDoc(followDocRef, {
+          userId: targetUserId,
+          followedAt: new Date().toISOString(),
+        });
+        await setDoc(followerDocRef, {
+          userId: currentUser.uid,
+          followedAt: new Date().toISOString(),
+        });
+        await updateDoc(currentUserRef, { followingCount: increment(1) });
+        await updateDoc(targetUserRef, { followersCount: increment(1) });
+        
+        console.log('✅ Follow action completed successfully!');
+        console.log(`📋 Updated following count for ${currentUser.uid}`);
+        console.log(`📋 Updated followers count for ${targetUserId}`);
+        
+        // Send follow notification
+        try {
+          const currentUserDoc = await getDoc(currentUserRef);
+          const currentUserData = currentUserDoc.data() || {};
+          const notificationsRef = collection(db, 'users', targetUserId, 'notifications');
+          await setDoc(doc(notificationsRef, `${currentUser.uid}_follow_${Date.now()}`), {
+            type: 'follow',
+            fromUserId: currentUser.uid,
+            fromUserName: currentUserData.name || currentUserData.displayName || 'User',
+            fromUserImage: currentUserData.profileImage || currentUserData.avatar || null,
+            message: `${currentUserData.name || currentUserData.displayName || 'Someone'} started following you`,
+            createdAt: new Date().toISOString(),
+            read: false,
+          });
+        } catch (e) {
+          console.log('⚠️ Notification error:', e);
+        }
+        
+        setIsFollowing(true);
       }
     } catch (error) {
-      console.error('Error claiming reward:', error);
-      Alert.alert('Error', 'Failed to claim reward. Please try again.');
+      console.error('❌ Error toggling follow:', error);
+      Alert.alert('Error', 'Failed to update follow status');
     } finally {
-      setClaimingReward(false);
+      setFollowLoading(false);
     }
   };
 
@@ -360,21 +412,44 @@ export default function ProfileScreen() {
       >
         <View style={styles.profileInner}>
           <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <Image 
-              source={userData?.profileImage ? { uri: userData.profileImage } : require("./assets/profile.png")} 
-              style={styles.avatar} 
-            />
+            {userData?.profileImage || userData?.user_picture ? (
+              <Image 
+                source={{ uri: userData.profileImage || userData.user_picture }} 
+                style={styles.avatar} 
+              />
+            ) : (
+              <View style={[styles.avatar, { backgroundColor: '#E1E8ED', justifyContent: 'center', alignItems: 'center' }]}>
+                <Ionicons name="person" size={30} color="#657786" />
+              </View>
+            )}
             <View style={{ marginLeft: 12, flex: 1 }}>
               <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <Text style={styles.name}>{userData?.firstName || ''} {userData?.lastName || ''}</Text>
+                <Text style={styles.name}>{userData?.firstName || userData?.user_firstname || ''} {userData?.lastName || userData?.user_lastname || ''}</Text>
                 <Ionicons name="person" size={16} color={C.cyan} style={{ marginLeft: 6 }} />
               </View>
               <Text style={styles.handle}>
                 {isOwnProfile 
-                  ? `${userData?.email || ''} · ${userData?.phoneNumber ? `Phone: ${userData.phoneNumber}` : 'No phone'}`
-                  : `@${userData?.username || 'user'}`
+                  ? `${userData?.email || userData?.user_email || ''} · ${userData?.phoneNumber || userData?.user_phone ? `Phone: ${userData.phoneNumber || userData?.user_phone}` : 'No phone'}`
+                  : `@${userData?.username || userData?.user_name || 'user'}`
                 }
               </Text>
+              {/* Online/Offline Status */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                <View style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 4,
+                  backgroundColor: userData?.isOnline ? '#0EE7B7' : '#666',
+                  marginRight: 6
+                }} />
+                <Text style={{
+                  color: userData?.isOnline ? '#0EE7B7' : '#888',
+                  fontSize: 11,
+                  fontWeight: '600'
+                }}>
+                  {userData?.isOnline ? 'Online' : userData?.lastSeen ? `Last seen ${formatTimestamp(userData.lastSeen)}` : 'Offline'}
+                </Text>
+              </View>
             </View>
 
             {/* Edit Profile Button - Only show for own profile */}
@@ -388,12 +463,40 @@ export default function ProfileScreen() {
             )}
             {/* Back Button - Show when viewing other user's profile */}
             {!isOwnProfile && (
-              <TouchableOpacity
-                style={styles.iconBtn}
-                onPress={() => navigation.goBack()}
-              >
-                <Ionicons name="arrow-back" size={16} color={C.text} />
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TouchableOpacity
+                  style={styles.iconBtn}
+                  onPress={() => navigation.goBack()}
+                >
+                  <Ionicons name="arrow-back" size={16} color={C.text} />
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[
+                    styles.followBtn,
+                    isFollowing && styles.followingBtn,
+                    followLoading && styles.followBtnDisabled
+                  ]}
+                  onPress={handleFollowToggle}
+                  disabled={followLoading}
+                  activeOpacity={0.8}
+                >
+                  {followLoading ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <Ionicons 
+                        name={isFollowing ? "checkmark" : "person-add"} 
+                        size={14} 
+                        color="#fff" 
+                      />
+                      <Text style={styles.followBtnText}>
+                        {isFollowing ? 'Following' : 'Follow'}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
             )}
           </View>
 
@@ -406,8 +509,22 @@ export default function ProfileScreen() {
 
           {/* Stats (real-time from Firestore) */}
           <View style={styles.statsRow}>
-            <Stat value={followersCount} label="Followers" />
-            <Stat value={followingCount} label="Following" />
+            <Stat 
+              value={followersCount} 
+              label="Followers" 
+              onPress={() => navigation.navigate('FollowersFollowing', { 
+                userId: targetUserId || userId, 
+                type: 'followers' 
+              })}
+            />
+            <Stat 
+              value={followingCount} 
+              label="Following" 
+              onPress={() => navigation.navigate('FollowersFollowing', { 
+                userId: targetUserId || userId, 
+                type: 'following' 
+              })}
+            />
             <Stat value={userData?.friends ?? 0} label="Friends" />
             {isOwnProfile && <Stat value={userData?.visits ?? 0} label="Visits" />}
           </View>
@@ -447,41 +564,6 @@ export default function ProfileScreen() {
             </View>
           </View>
 
-          {/* ===== REWARDS ===== */}
-          <View style={styles.rewardsCard}>
-            <View style={styles.rewardsHeader}>
-              <Text style={styles.rewardsTitle}>Daily Rewards</Text>
-              <TouchableOpacity>
-                <Text style={{ color: C.cyan, fontWeight: "600" }}>More Rewards ›</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.rewardsDots}>
-              <RewardDot day="Missed" state="missed" />
-              <RewardDot day="Today" state="today" />
-              <RewardDot day="21 Sep" state="future" />
-              <RewardDot day="22 Sep" state="future" />
-              <RewardDot day="23 Sep" state="future" />
-            </View>
-
-            <TouchableOpacity 
-              activeOpacity={0.9} 
-              style={[styles.claimWrapper, !canClaimToday && styles.claimWrapperDisabled]}
-              onPress={handleClaimReward}
-              disabled={!canClaimToday || claimingReward}
-            >
-              <LinearGradient
-                colors={canClaimToday ? [C.brand, "rgba(191,46,240,0.2)"] : ["#444", "#333"]}
-                start={{ x: 0.1, y: 0 }}
-                end={{ x: 0.9, y: 1 }}
-                style={styles.claimBtn}
-              >
-                <Text style={styles.claimText}>
-                  {claimingReward ? 'Claiming...' : canClaimToday ? 'Claim Reward' : 'Claimed Today'}
-                </Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
         </>
       )}
 
@@ -544,8 +626,6 @@ export default function ProfileScreen() {
               <View style={styles.divider} />
               <ListRow title="Membership" onPress={() => navigation.navigate("Membership")}  />
               <View style={styles.divider} />
-              <ListRow title="Reward Center"onPress={() => navigation.navigate("Reward")} />
-              <View style={styles.divider} />
               <ListRow title="Help Center" />
               <View style={styles.divider} />
               <ListRow title="Shop" />
@@ -597,10 +677,16 @@ export default function ProfileScreen() {
               {/* Story Header */}
               <View style={styles.storyModalHeader}>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Image 
-                    source={userData?.profileImage ? { uri: userData.profileImage } : require("./assets/profile.png")} 
-                    style={styles.storyModalAvatar} 
-                  />
+                  {userData?.profileImage ? (
+                    <Image 
+                      source={{ uri: userData.profileImage }} 
+                      style={styles.storyModalAvatar} 
+                    />
+                  ) : (
+                    <View style={[styles.storyModalAvatar, { backgroundColor: '#E1E8ED', justifyContent: 'center', alignItems: 'center' }]}>
+                      <Ionicons name="person" size={24} color="#657786" />
+                    </View>
+                  )}
                   <View style={{ marginLeft: 12 }}>
                     <Text style={styles.storyModalName}>
                       {userData?.firstName || ''} {userData?.lastName || ''}
@@ -658,6 +744,29 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.border,
   },
+  followBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: C.brand,
+    borderWidth: 1,
+    borderColor: C.brand,
+  },
+  followingBtn: {
+    backgroundColor: 'rgba(191,46,240,0.2)',
+    borderColor: C.brand,
+  },
+  followBtnDisabled: {
+    opacity: 0.6,
+  },
+  followBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   pill: {
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -705,32 +814,6 @@ const styles = StyleSheet.create({
   },
   walletIconBig: { width: 22, height: 22, resizeMode: "contain" },
   walletChipPlainText: { color: C.text, fontWeight: "800", fontSize: 14 },
-  rewardsCard: {
-    marginTop: 16,
-    marginHorizontal: PADDING_H,
-    backgroundColor: C.card,
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: C.border,
-  },
-  rewardsHeader: { flexDirection: "row", justifyContent: "space-between", marginBottom: 10 },
-  rewardsTitle: { color: C.text, fontWeight: "700", fontSize: 15 },
-  rewardsDots: { flexDirection: "row", justifyContent: "space-between", marginTop: 6 },
-  rewardDot: { width: 36, height: 36, borderRadius: 20, alignItems: "center", justifyContent: "center" },
-  rewardIcon: { width: 16, height: 16, resizeMode: "contain" },
-  claimWrapper: {
-    marginTop: 14,
-    borderWidth: 1,
-    borderColor: C.brand,
-    borderRadius: 12,
-    overflow: "hidden",
-  },
-  claimWrapperDisabled: {
-    opacity: 0.5,
-  },
-  claimBtn: { paddingVertical: 12, alignItems: "center" },
-  claimText: { color: "#fff", fontWeight: "800" },
   sectionTitle: {
     color: C.text,
     fontWeight: "700",

@@ -129,15 +129,15 @@ export default function AddFriendsScreen({ navigation }) {
         const userData = snapshot.docs[0].data();
         
         let displayName = 'User';
-        if (userData.username && userData.username.trim()) {
-          displayName = userData.username;
-        } else if (userData.firstName || userData.lastName) {
-          const first = userData.firstName || '';
-          const last = userData.lastName || '';
+        if ((userData.username || userData.user_name) && (userData.username || userData.user_name).trim()) {
+          displayName = userData.username || userData.user_name;
+        } else if (userData.firstName || userData.user_firstname || userData.lastName || userData.user_lastname) {
+          const first = userData.firstName || userData.user_firstname || '';
+          const last = userData.lastName || userData.user_lastname || '';
           displayName = `${first} ${last}`.trim();
         } else if (userData.displayName && userData.displayName.trim()) {
           displayName = userData.displayName;
-        } else if (userData.email) {
+        } else if (userData.email || userData.user_email) {
           displayName = userData.email.split('@')[0];
         }
         
@@ -285,11 +285,11 @@ export default function AddFriendsScreen({ navigation }) {
         const userData = doc.data();
         
         // Get all searchable fields
-        const username = (userData.username || '').toLowerCase();
-        const email = (userData.email || '').toLowerCase();
+        const username = (userData.username || userData.user_name || '').toLowerCase();
+        const email = (userData.email || userData.user_email || '').toLowerCase();
         const emailUsername = email ? email.split('@')[0] : '';
-        const firstName = (userData.firstName || '').toLowerCase();
-        const lastName = (userData.lastName || '').toLowerCase();
+        const firstName = (userData.firstName || userData.user_firstname || '').toLowerCase();
+        const lastName = (userData.lastName || userData.user_lastname || '').toLowerCase();
         const fullName = `${firstName} ${lastName}`.trim();
         const displayName = (userData.displayName || '').toLowerCase();
         const name = (userData.name || '').toLowerCase();
