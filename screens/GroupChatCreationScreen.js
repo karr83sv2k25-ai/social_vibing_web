@@ -1,12 +1,12 @@
 // screens/GroupChatCreationScreen.js
 import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  View, 
-  Text, 
-  TextInput, 
-  FlatList, 
-  TouchableOpacity, 
-  Image, 
+import {
+  View,
+  Text,
+  TextInput,
+  FlatList,
+  TouchableOpacity,
+  Image,
   StyleSheet,
   ActivityIndicator,
   Alert
@@ -32,11 +32,11 @@ export default function GroupChatCreationScreen({ navigation }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchUsers, setSearchUsers] = useState([]);
   const [searching, setSearching] = useState(false);
-  
+
   useEffect(() => {
     loadUsers();
   }, []);
-  
+
   // Debounced search effect
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -47,10 +47,10 @@ export default function GroupChatCreationScreen({ navigation }) {
         setSearching(false);
       }
     }, 300);
-    
+
     return () => clearTimeout(timer);
   }, [searchQuery]);
-  
+
   const searchAllUsers = async (query) => {
     if (!query || query.trim().length < 2) {
       setSearchUsers([]);
@@ -61,19 +61,19 @@ export default function GroupChatCreationScreen({ navigation }) {
     try {
       setSearching(true);
       const searchLower = query.toLowerCase().trim();
-      
+
       const usersRef = collection(db, 'users');
       const usersSnap = await getDocs(usersRef);
-      
+
       const searchResults = [];
       usersSnap.forEach(userDoc => {
         if (userDoc.id === auth.currentUser.uid) return;
-        
+
         const userData = userDoc.data();
         const displayName = userData.displayName || userData.username || userData.name || userData.fullName || '';
         const username = userData.username || '';
         const email = userData.email || '';
-        
+
         if (
           displayName.toLowerCase().includes(searchLower) ||
           username.toLowerCase().includes(searchLower) ||
@@ -90,7 +90,7 @@ export default function GroupChatCreationScreen({ navigation }) {
           });
         }
       });
-      
+
       setSearchUsers(searchResults);
     } catch (error) {
       console.error('Error searching users:', error);
@@ -98,7 +98,7 @@ export default function GroupChatCreationScreen({ navigation }) {
       setSearching(false);
     }
   };
-  
+
   const loadUsers = async () => {
     if (!auth.currentUser) return;
 
@@ -166,7 +166,7 @@ export default function GroupChatCreationScreen({ navigation }) {
           });
         });
       }
-      
+
       setUsers(contactsList);
       console.log('Loaded contacts:', contactsList.length);
     } catch (error) {
@@ -176,7 +176,7 @@ export default function GroupChatCreationScreen({ navigation }) {
       setLoadingUsers(false);
     }
   };
-  
+
   const handlePickIcon = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -184,12 +184,12 @@ export default function GroupChatCreationScreen({ navigation }) {
       aspect: [1, 1],
       quality: 0.7,
     });
-    
+
     if (!result.canceled) {
       setGroupIcon(result.assets[0].uri);
     }
   };
-  
+
   const toggleUserSelection = (user) => {
     if (selectedUsers.find(u => u.id === user.id)) {
       setSelectedUsers(selectedUsers.filter(u => u.id !== user.id));
@@ -197,34 +197,42 @@ export default function GroupChatCreationScreen({ navigation }) {
       setSelectedUsers([...selectedUsers, user]);
     }
   };
-  
+
   const handleCreateGroup = async () => {
     if (!groupName.trim()) {
       Alert.alert('Error', 'Please enter a group name');
       return;
     }
-    
+
     if (selectedUsers.length === 0) {
       Alert.alert('Error', 'Please select at least one participant');
       return;
     }
-    
+
     setLoading(true);
-    
+
     try {
       let iconUrl = null;
       if (groupIcon) {
-        iconUrl = await uploadImageToHostinger(groupIcon, 'group_icons');
+        try {
+          iconUrl = await uploadImageToHostinger(groupIcon, 'group_icons');
+        } catch (uploadError) {
+          console.warn('Failed to upload group icon, continuing without icon:', uploadError);
+          // Continue without icon if upload fails
+        }
       }
-      
+
       const conversationId = await createGroupChat(auth.currentUser.uid, {
         name: groupName,
         icon: iconUrl,
         description: '',
         participantIds: selectedUsers.map(u => u.id)
       });
-      
-      navigation.replace('EnhancedChatV2', {
+
+      console.log('Group created successfully:', conversationId);
+
+      // Navigate to the chat screen - use navigate instead of replace for better web compatibility
+      navigation.navigate('EnhancedChatV2', {
         conversationId,
         isGroup: true,
         groupName,
@@ -232,19 +240,19 @@ export default function GroupChatCreationScreen({ navigation }) {
       });
     } catch (error) {
       console.error('Error creating group:', error);
-      Alert.alert('Error', 'Failed to create group');
+      Alert.alert('Error', `Failed to create group: ${error.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
   };
-  
+
   // Hot-loading search - filters instantly on every keystroke
   const filteredUsers = useMemo(() => {
     // If no search query, show all contacts
     if (!searchQuery || searchQuery.trim() === '') {
       return users;
     }
-    
+
     // Filter local contacts first
     const searchLower = searchQuery.toLowerCase().trim();
     const localMatches = users.filter(user => {
@@ -258,27 +266,27 @@ export default function GroupChatCreationScreen({ navigation }) {
         user.email?.toLowerCase().includes(searchLower)
       );
     });
-    
+
     // If search query is long enough and we have search results, combine them
     if (searchQuery.trim().length >= 2 && searchUsers.length > 0) {
       const combinedMap = new Map();
-      
+
       // Add local matches first (priority)
       localMatches.forEach(user => combinedMap.set(user.id, user));
-      
+
       // Add search results (only if not already in contacts)
       searchUsers.forEach(user => {
         if (!combinedMap.has(user.id)) {
           combinedMap.set(user.id, user);
         }
       });
-      
+
       return Array.from(combinedMap.values());
     }
-    
+
     return localMatches;
   }, [users, searchQuery, searchUsers]);
-  
+
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -288,14 +296,14 @@ export default function GroupChatCreationScreen({ navigation }) {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>New Group</Text>
         <TouchableOpacity onPress={handleCreateGroup} disabled={loading}>
-          <Ionicons 
-            name="checkmark" 
-            size={24} 
-            color={loading ? "#666" : ACCENT} 
+          <Ionicons
+            name="checkmark"
+            size={24}
+            color={loading ? "#666" : ACCENT}
           />
         </TouchableOpacity>
       </View>
-      
+
       {/* Group info section */}
       <View style={styles.groupInfoSection}>
         <TouchableOpacity onPress={handlePickIcon} style={styles.iconPicker}>
@@ -305,7 +313,7 @@ export default function GroupChatCreationScreen({ navigation }) {
             <Ionicons name="camera" size={32} color="#fff" />
           )}
         </TouchableOpacity>
-        
+
         <TextInput
           style={styles.nameInput}
           placeholder="Group name"
@@ -315,7 +323,7 @@ export default function GroupChatCreationScreen({ navigation }) {
           maxLength={50}
         />
       </View>
-      
+
       {/* Search */}
       <View style={styles.searchContainer}>
         <Ionicons name="search" size={20} color="#666" />
@@ -335,12 +343,12 @@ export default function GroupChatCreationScreen({ navigation }) {
           <ActivityIndicator size="small" color={ACCENT} style={{ marginLeft: 8 }} />
         )}
       </View>
-      
+
       {/* Selected users count */}
       <Text style={styles.sectionTitle}>
         Participants: {selectedUsers.length}
       </Text>
-      
+
       {/* Users list */}
       <FlatList
         data={filteredUsers}
@@ -365,7 +373,7 @@ export default function GroupChatCreationScreen({ navigation }) {
         }
         renderItem={({ item }) => {
           const isSelected = selectedUsers.find(u => u.id === item.id);
-          
+
           // Show badge for source (friend, follower, following, search)
           const getBadge = () => {
             if (item.source === 'friend') return { icon: 'people', color: ACCENT, text: 'Friend' };
@@ -374,16 +382,16 @@ export default function GroupChatCreationScreen({ navigation }) {
             if (item.source === 'search') return { icon: 'search', color: '#6B7280', text: 'Search' };
             return null;
           };
-          
+
           const badge = getBadge();
-          
+
           return (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.userItem}
               onPress={() => toggleUserSelection(item)}
             >
-              <Image 
-                source={{ uri: item.profileImage || item.avatar }} 
+              <Image
+                source={{ uri: item.profileImage || item.avatar }}
                 style={styles.avatar}
               />
               <View style={styles.userInfo}>
@@ -416,7 +424,7 @@ export default function GroupChatCreationScreen({ navigation }) {
           );
         }}
       />
-      
+
       {loading && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color={ACCENT} />

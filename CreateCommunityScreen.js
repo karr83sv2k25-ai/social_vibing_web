@@ -11,12 +11,21 @@ import {
   Image,
   ActivityIndicator,
   Alert,
+  Platform,
 } from "react-native";
 import { launchImageLibraryAsync, MediaTypeOptions, requestMediaLibraryPermissionsAsync } from 'expo-image-picker';
 import { uploadImageToHostinger } from './hostingerConfig';
 import { db, auth } from './firebaseConfig';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { Ionicons } from "@expo/vector-icons";
+import {
+  isWeb,
+  getContainerWidth,
+  getResponsivePadding,
+  getResponsiveFontSize,
+  getResponsiveModalSize,
+  getWebInputStyles
+} from './utils/webResponsive';
 
 export default function CreateCommunityScreen({ navigation }) {
   const [step, setStep] = useState(1);
@@ -112,8 +121,8 @@ export default function CreateCommunityScreen({ navigation }) {
 
   const isStep1Valid = () => {
     return (
-      communityName.trim() !== '' && 
-      description.trim() !== '' && 
+      communityName.trim() !== '' &&
+      description.trim() !== '' &&
       category.trim() !== '' &&
       language.trim() !== ''
     );
@@ -121,7 +130,7 @@ export default function CreateCommunityScreen({ navigation }) {
 
   const isStep2Valid = () => {
     return (
-      coverImage !== null && 
+      coverImage !== null &&
       background !== null
     );
   };
@@ -183,16 +192,16 @@ export default function CreateCommunityScreen({ navigation }) {
 
       // Save community doc to Firestore
       // db is now imported globally
-      
+
       // Get current user ID
       const currentUserId = auth.currentUser?.uid;
-      
+
       if (!currentUserId) {
         Alert.alert('Error', 'User not authenticated. Please login again.');
         setUploading(false);
         return;
       }
-      
+
       // Build community data object, only including fields that are not undefined
       const communityData = {
         name: communityName,
@@ -213,7 +222,7 @@ export default function CreateCommunityScreen({ navigation }) {
         adminIds: [currentUserId], // Admin IDs array - creator is first admin
         isAdmin: true, // Flag to indicate creator is admin
       };
-      
+
       // Only add image fields if they have values (not null or undefined)
       if (profileImageUrl) {
         communityData.profileImage = profileImageUrl;
@@ -224,7 +233,7 @@ export default function CreateCommunityScreen({ navigation }) {
       if (backgroundImageUrl) {
         communityData.backgroundImage = backgroundImageUrl;
       }
-      
+
       await addDoc(collection(db, 'communities'), communityData);
 
       Alert.alert(
@@ -243,242 +252,246 @@ export default function CreateCommunityScreen({ navigation }) {
     }
   };
 
+  const useDesktopLayout = isWeb && getContainerWidth() > 768;
+
   return (
     <View style={styles.container}>
-      <ScrollView
-        contentContainerStyle={{ padding: 20 }}
-        showsVerticalScrollIndicator={false}
-      >
-      {/* Header */}
-      <View style={styles.header}>
-        {step > 1 ? (
-          <TouchableOpacity onPress={back}>
-            <Ionicons name="arrow-back" size={22} color="#fff" />
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons name="close" size={22} color="#fff" />
-          </TouchableOpacity>
-        )}
-        <Text style={styles.headerTitle}>New Community</Text>
-        <Text style={styles.help}>Help</Text>
-      </View>
-
-      {/* Step 1 */}
-      {step === 1 && (
-        <View style={{ marginTop: 40 }}>
-          <TouchableOpacity style={styles.uploadBox} onPress={() => pickImage(setImage)}>
-            {image ? (
-              <Image source={{ uri: image }} style={{ width: '100%', height: 120, borderRadius: 12 }} />
-            ) : (
-              <Ionicons name="add" size={40} color="#888" />
-            )}
-          </TouchableOpacity>
-
-          <TextInput
-            style={[styles.input, { marginTop: 16 }]}
-            placeholder="Community Name"
-            placeholderTextColor="#666"
-            maxLength={50}
-            value={communityName}
-            onChangeText={setCommunityName}
-          />
-          <TextInput
-            style={[styles.input, { marginTop: 12, height: 80 }]}
-            placeholder="Describe your Community in one line"
-            placeholderTextColor="#666"
-            maxLength={200}
-            multiline
-            value={description}
-            onChangeText={setDescription}
-          />
-
-          <TouchableOpacity 
-            style={[styles.selectBox, styles.selectBoxRow]} 
-            onPress={() => setShowLanguageModal(true)}
-          >
-            <Text style={styles.selectText}>
-              Community Language: {language}
-            </Text>
-            <Ionicons name="chevron-down" size={20} color="#666" />
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={[styles.selectBox, styles.selectBoxRow]} 
-            onPress={() => setShowCategoryModal(true)}
-          >
-            <Text style={styles.selectText}>
-              Primary Category: {category || "Select"}
-            </Text>
-            <Ionicons name="chevron-down" size={20} color="#666" />
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={[
-              styles.nextButton, 
-              !isStep1Valid() && styles.nextButtonDisabled
-            ]} 
-            onPress={next}
-            disabled={!isStep1Valid()}
-          >
-            <Text style={[
-              styles.nextText,
-              !isStep1Valid() && styles.nextTextDisabled
-            ]}>
-              Next (1/3)
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Step 2 */}
-      {step === 2 && (
-        <View style={{ marginTop: 40 }}>
-          <Text style={styles.sectionTitle}>Customize Look</Text>
-
-          <TouchableOpacity style={styles.menuRow} onPress={() => setShowCoverImageModal(true)}>
-            <Text style={styles.menuText}>Cover Image</Text>
-            {coverImage ? (
-              <Image source={{ uri: coverImage }} style={styles.previewImage} />
-            ) : (
-              <Ionicons name="image-outline" size={22} color="#999" />
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.menuRow} onPress={() => setShowBackgroundModal(true)}>
-            <Text style={styles.menuText}>Community Background</Text>
-            {background ? (
-              <Image source={{ uri: background }} style={styles.previewImage} />
-            ) : (
-              <Ionicons name="image-outline" size={22} color="#999" />
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.menuRow} onPress={() => setShowColorModal(true)}>
-            <Text style={styles.menuText}>Theme Color</Text>
-            <View style={[styles.colorCircle, { backgroundColor: themeColor }]} />
-          </TouchableOpacity>
-
-          <View style={styles.bottomNav}>
-            <TouchableOpacity onPress={back}>
-              <Text style={styles.backText}>← Back</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[
-                styles.nextButtonSmall,
-                !isStep2Valid() && styles.nextButtonDisabled
-              ]} 
-              onPress={next}
-              disabled={!isStep2Valid()}
-            >
-              <Text style={[
-                styles.nextText,
-                !isStep2Valid() && styles.nextTextDisabled
-              ]}>
-                Next (2/3)
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {/* Step 3 */}
-      {step === 3 && (
-        <View style={{ marginTop: 40 }}>
-          <Text style={styles.sectionTitle}>Permissions & Privacy</Text>
-
-          <Text style={styles.subLabel}>Join Permissions</Text>
-          <TouchableOpacity
-            style={[
-              styles.choice,
-              privacy === "open" && styles.choiceActive,
-            ]}
-            onPress={() => setPrivacy("open")}
-          >
-            <Text style={styles.choiceText}>Open — anyone may join</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.choice,
-              privacy === "locked" && styles.choiceActive,
-            ]}
-            onPress={() => setPrivacy("locked")}
-          >
-            <Text style={styles.choiceText}>
-              Locked — only selected users may join
-            </Text>
-          </TouchableOpacity>
-
-          <Text style={[styles.subLabel, { marginTop: 16 }]}>
-            Discoverability
-          </Text>
-          <TouchableOpacity
-            style={[
-              styles.choice,
-              discover === "public" && styles.choiceActive,
-            ]}
-            onPress={() => setDiscover("public")}
-          >
-            <Text style={styles.choiceText}>
-              Public — visible and recommended
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.choice,
-              discover === "private" && styles.choiceActive,
-            ]}
-            onPress={() => setDiscover("private")}
-          >
-            <Text style={styles.choiceText}>
-              Private — only found by link or ID
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.createBtn} onPress={handleCreate} disabled={uploading}>
-            {uploading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.createText}>Create</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Reminder Popup */}
-      <Modal visible={showReminder} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Reminder</Text>
-            <Text style={styles.modalText}>
-              All actions you take related to our Platform and all information you
-              post on our Platform remain your responsibility.{"\n\n"}
-              Please agree to the following rules before creating a Community:
-            </Text>
-
-            <Text style={styles.modalBullet}>
-              • Monitor your community regularly.{"\n"}
-              • Manage according to platform guidelines.{"\n"}
-              • Do not promote or conduct illegal activities.{"\n"}
-              • Violations can lead to suspension or removal.
-            </Text>
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity onPress={() => setShowReminder(false)}>
-                <Text style={styles.cancelBtn}>Cancel</Text>
+      <View style={[useDesktopLayout && { maxWidth: 900, alignSelf: 'center', width: '100%' }]}>
+        <ScrollView
+          contentContainerStyle={{ padding: getResponsivePadding() }}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Header */}
+          <View style={styles.header}>
+            {step > 1 ? (
+              <TouchableOpacity onPress={back}>
+                <Ionicons name="arrow-back" size={22} color="#fff" />
               </TouchableOpacity>
+            ) : (
+              <TouchableOpacity onPress={() => navigation.goBack()}>
+                <Ionicons name="close" size={22} color="#fff" />
+              </TouchableOpacity>
+            )}
+            <Text style={styles.headerTitle}>New Community</Text>
+            <Text style={styles.help}>Help</Text>
+          </View>
+
+          {/* Step 1 */}
+          {step === 1 && (
+            <View style={{ marginTop: 40 }}>
+              <TouchableOpacity style={styles.uploadBox} onPress={() => pickImage(setImage)}>
+                {image ? (
+                  <Image source={{ uri: image }} style={{ width: '100%', height: 120, borderRadius: 12 }} />
+                ) : (
+                  <Ionicons name="add" size={40} color="#888" />
+                )}
+              </TouchableOpacity>
+
+              <TextInput
+                style={[styles.input, { marginTop: 16 }]}
+                placeholder="Community Name"
+                placeholderTextColor="#666"
+                maxLength={50}
+                value={communityName}
+                onChangeText={setCommunityName}
+              />
+              <TextInput
+                style={[styles.input, { marginTop: 12, height: 80 }]}
+                placeholder="Describe your Community in one line"
+                placeholderTextColor="#666"
+                maxLength={200}
+                multiline
+                value={description}
+                onChangeText={setDescription}
+              />
+
               <TouchableOpacity
-                style={styles.agreeBtn}
-                onPress={confirmCreate}
+                style={[styles.selectBox, styles.selectBoxRow]}
+                onPress={() => setShowLanguageModal(true)}
               >
-                <Text style={styles.agreeText}>Agree & Continue</Text>
+                <Text style={styles.selectText}>
+                  Community Language: {language}
+                </Text>
+                <Ionicons name="chevron-down" size={20} color="#666" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.selectBox, styles.selectBoxRow]}
+                onPress={() => setShowCategoryModal(true)}
+              >
+                <Text style={styles.selectText}>
+                  Primary Category: {category || "Select"}
+                </Text>
+                <Ionicons name="chevron-down" size={20} color="#666" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.nextButton,
+                  !isStep1Valid() && styles.nextButtonDisabled
+                ]}
+                onPress={next}
+                disabled={!isStep1Valid()}
+              >
+                <Text style={[
+                  styles.nextText,
+                  !isStep1Valid() && styles.nextTextDisabled
+                ]}>
+                  Next (1/3)
+                </Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
-      </Modal>
+          )}
 
-    </ScrollView>
+          {/* Step 2 */}
+          {step === 2 && (
+            <View style={{ marginTop: 40 }}>
+              <Text style={styles.sectionTitle}>Customize Look</Text>
+
+              <TouchableOpacity style={styles.menuRow} onPress={() => setShowCoverImageModal(true)}>
+                <Text style={styles.menuText}>Cover Image</Text>
+                {coverImage ? (
+                  <Image source={{ uri: coverImage }} style={styles.previewImage} />
+                ) : (
+                  <Ionicons name="image-outline" size={22} color="#999" />
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.menuRow} onPress={() => setShowBackgroundModal(true)}>
+                <Text style={styles.menuText}>Community Background</Text>
+                {background ? (
+                  <Image source={{ uri: background }} style={styles.previewImage} />
+                ) : (
+                  <Ionicons name="image-outline" size={22} color="#999" />
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.menuRow} onPress={() => setShowColorModal(true)}>
+                <Text style={styles.menuText}>Theme Color</Text>
+                <View style={[styles.colorCircle, { backgroundColor: themeColor }]} />
+              </TouchableOpacity>
+
+              <View style={styles.bottomNav}>
+                <TouchableOpacity onPress={back}>
+                  <Text style={styles.backText}>← Back</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.nextButtonSmall,
+                    !isStep2Valid() && styles.nextButtonDisabled
+                  ]}
+                  onPress={next}
+                  disabled={!isStep2Valid()}
+                >
+                  <Text style={[
+                    styles.nextText,
+                    !isStep2Valid() && styles.nextTextDisabled
+                  ]}>
+                    Next (2/3)
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* Step 3 */}
+          {step === 3 && (
+            <View style={{ marginTop: 40 }}>
+              <Text style={styles.sectionTitle}>Permissions & Privacy</Text>
+
+              <Text style={styles.subLabel}>Join Permissions</Text>
+              <TouchableOpacity
+                style={[
+                  styles.choice,
+                  privacy === "open" && styles.choiceActive,
+                ]}
+                onPress={() => setPrivacy("open")}
+              >
+                <Text style={styles.choiceText}>Open — anyone may join</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.choice,
+                  privacy === "locked" && styles.choiceActive,
+                ]}
+                onPress={() => setPrivacy("locked")}
+              >
+                <Text style={styles.choiceText}>
+                  Locked — only selected users may join
+                </Text>
+              </TouchableOpacity>
+
+              <Text style={[styles.subLabel, { marginTop: 16 }]}>
+                Discoverability
+              </Text>
+              <TouchableOpacity
+                style={[
+                  styles.choice,
+                  discover === "public" && styles.choiceActive,
+                ]}
+                onPress={() => setDiscover("public")}
+              >
+                <Text style={styles.choiceText}>
+                  Public — visible and recommended
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.choice,
+                  discover === "private" && styles.choiceActive,
+                ]}
+                onPress={() => setDiscover("private")}
+              >
+                <Text style={styles.choiceText}>
+                  Private — only found by link or ID
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.createBtn} onPress={handleCreate} disabled={uploading}>
+                {uploading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.createText}>Create</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Reminder Popup */}
+          <Modal visible={showReminder} transparent animationType="fade">
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalCard}>
+                <Text style={styles.modalTitle}>Reminder</Text>
+                <Text style={styles.modalText}>
+                  All actions you take related to our Platform and all information you
+                  post on our Platform remain your responsibility.{"\n\n"}
+                  Please agree to the following rules before creating a Community:
+                </Text>
+
+                <Text style={styles.modalBullet}>
+                  • Monitor your community regularly.{"\n"}
+                  • Manage according to platform guidelines.{"\n"}
+                  • Do not promote or conduct illegal activities.{"\n"}
+                  • Violations can lead to suspension or removal.
+                </Text>
+
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity onPress={() => setShowReminder(false)}>
+                    <Text style={styles.cancelBtn}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.agreeBtn}
+                    onPress={confirmCreate}
+                  >
+                    <Text style={styles.agreeText}>Agree & Continue</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+
+        </ScrollView>
+      </View>
 
       {/* Language Selection Modal */}
       <Modal
@@ -587,7 +600,7 @@ export default function CreateCommunityScreen({ navigation }) {
               </TouchableOpacity>
             </View>
             <View style={styles.imagePickerContent}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.uploadButton}
                 onPress={() => {
                   pickImage(setCoverImage);
@@ -598,7 +611,7 @@ export default function CreateCommunityScreen({ navigation }) {
                 <Text style={styles.uploadText}>Choose from Gallery</Text>
               </TouchableOpacity>
               {coverImage && (
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.removeButton}
                   onPress={() => {
                     setCoverImage(null);
@@ -630,7 +643,7 @@ export default function CreateCommunityScreen({ navigation }) {
               </TouchableOpacity>
             </View>
             <View style={styles.imagePickerContent}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.uploadButton}
                 onPress={() => {
                   pickImage(setBackground);
@@ -641,7 +654,7 @@ export default function CreateCommunityScreen({ navigation }) {
                 <Text style={styles.uploadText}>Choose from Gallery</Text>
               </TouchableOpacity>
               {background && (
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.removeButton}
                   onPress={() => {
                     setBackground(null);
@@ -703,24 +716,33 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#0c0d0f",
+    ...(isWeb && {
+      alignItems: 'center',
+    }),
   },
   scrollView: {
     flex: 1,
+    ...(isWeb && {
+      width: '100%',
+      maxWidth: getContainerWidth(),
+    }),
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     marginTop: 10,
+    paddingHorizontal: getResponsivePadding(20),
   },
   headerTitle: {
     color: "#fff",
-    fontSize: 18,
+    fontSize: getResponsiveFontSize(18),
     fontWeight: "700",
   },
   help: {
     color: "#888",
-    fontSize: 14,
+    fontSize: getResponsiveFontSize(14),
+    ...(isWeb && { cursor: 'pointer' }),
   },
   uploadBox: {
     height: 120,
@@ -731,6 +753,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "#1a1c20",
+    ...(isWeb && { cursor: 'pointer' }),
   },
   input: {
     backgroundColor: "#1a1c20",
@@ -739,7 +762,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     color: "#fff",
     padding: 12,
-    fontSize: 14,
+    fontSize: getResponsiveFontSize(14),
+    ...getWebInputStyles(),
   },
   selectBox: {
     backgroundColor: "#1a1c20",
@@ -748,8 +772,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
     marginTop: 10,
+    ...(isWeb && { cursor: 'pointer' }),
   },
-  selectText: { color: "#fff" },
+  selectText: {
+    color: "#fff",
+    fontSize: getResponsiveFontSize(14),
+  },
   nextButton: {
     marginTop: 24,
     backgroundColor: "#20232a",
@@ -758,23 +786,27 @@ const styles = StyleSheet.create({
     borderColor: "#444",
     paddingVertical: 14,
     alignItems: "center",
+    ...(isWeb && { cursor: 'pointer' }),
   },
   nextButtonDisabled: {
     backgroundColor: "#1a1a1a",
     borderColor: "#333",
+    ...(isWeb && { cursor: 'not-allowed' }),
   },
-  nextText: { 
-    color: "#fff", 
-    fontWeight: "600" 
+  nextText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: getResponsiveFontSize(14),
   },
   nextTextDisabled: {
     color: "#666",
   },
   sectionTitle: {
     color: "#fff",
-    fontSize: 16,
+    fontSize: getResponsiveFontSize(16),
     fontWeight: "600",
     marginBottom: 10,
+    paddingHorizontal: getResponsivePadding(20),
   },
   menuRow: {
     flexDirection: "row",
@@ -787,8 +819,12 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 12,
     marginBottom: 10,
+    ...(isWeb && { cursor: 'pointer' }),
   },
-  menuText: { color: "#fff", fontSize: 14 },
+  menuText: {
+    color: "#fff",
+    fontSize: getResponsiveFontSize(14),
+  },
   colorCircle: {
     width: 20,
     height: 20,
@@ -799,8 +835,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     marginTop: 20,
+    paddingHorizontal: getResponsivePadding(20),
   },
-  backText: { color: "#4b6cff" },
+  backText: {
+    color: "#4b6cff",
+    fontSize: getResponsiveFontSize(14),
+    ...(isWeb && { cursor: 'pointer' }),
+  },
   nextButtonSmall: {
     backgroundColor: "#20232a",
     borderRadius: 12,
@@ -808,12 +849,14 @@ const styles = StyleSheet.create({
     borderColor: "#444",
     paddingVertical: 14,
     paddingHorizontal: 20,
+    ...(isWeb && { cursor: 'pointer' }),
   },
   subLabel: {
     color: "#888",
-    fontSize: 13,
+    fontSize: getResponsiveFontSize(13),
     marginBottom: 6,
     marginTop: 12,
+    paddingHorizontal: getResponsivePadding(20),
   },
   choice: {
     borderWidth: 1,
@@ -822,20 +865,29 @@ const styles = StyleSheet.create({
     padding: 14,
     backgroundColor: "#1a1c20",
     marginBottom: 10,
+    ...(isWeb && { cursor: 'pointer' }),
   },
   choiceActive: {
     borderColor: "#4b6cff",
     backgroundColor: "#14161c",
   },
-  choiceText: { color: "#fff" },
+  choiceText: {
+    color: "#fff",
+    fontSize: getResponsiveFontSize(14),
+  },
   createBtn: {
     marginTop: 30,
     backgroundColor: "#4b6cff",
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: "center",
+    ...(isWeb && { cursor: 'pointer' }),
   },
-  createText: { color: "#fff", fontWeight: "600" },
+  createText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: getResponsiveFontSize(14),
+  },
   modalOverlay: {
     position: 'absolute',
     top: 0,
@@ -852,7 +904,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#1b1d23",
     borderRadius: 16,
     padding: 20,
-    width: "90%",
+    width: isWeb ? Math.min(getResponsiveModalSize().width, 500) : "90%",
     alignSelf: 'center',
     borderWidth: 1,
     borderColor: "#333",
@@ -861,28 +913,46 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
+    maxHeight: '90%',
   },
   modalTitle: {
     color: "#fff",
-    fontSize: 18,
+    fontSize: getResponsiveFontSize(18),
     fontWeight: "700",
     marginBottom: 10,
   },
-  modalText: { color: "#aaa", fontSize: 14, marginBottom: 10 },
-  modalBullet: { color: "#ddd", fontSize: 13, marginBottom: 10 },
+  modalText: {
+    color: "#aaa",
+    fontSize: getResponsiveFontSize(14),
+    marginBottom: 10,
+  },
+  modalBullet: {
+    color: "#ddd",
+    fontSize: getResponsiveFontSize(13),
+    marginBottom: 10,
+  },
   modalButtons: {
     flexDirection: "row",
     justifyContent: "space-between",
     marginTop: 10,
   },
-  cancelBtn: { color: "#888", fontSize: 15 },
+  cancelBtn: {
+    color: "#888",
+    fontSize: getResponsiveFontSize(15),
+    ...(isWeb && { cursor: 'pointer' }),
+  },
   agreeBtn: {
     backgroundColor: "#4b6cff",
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 10,
+    ...(isWeb && { cursor: 'pointer' }),
   },
-  agreeText: { color: "#fff", fontWeight: "600" },
+  agreeText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: getResponsiveFontSize(14),
+  },
   selectBoxRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -890,7 +960,7 @@ const styles = StyleSheet.create({
   },
   pickerModal: {
     maxHeight: "80%",
-    width: "100%",
+    width: isWeb ? Math.min(getResponsiveModalSize().width, 600) : "100%",
     padding: 0,
   },
   modalHeader: {
@@ -912,13 +982,14 @@ const styles = StyleSheet.create({
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: "#222",
+    ...(isWeb && { cursor: 'pointer' }),
   },
   selectedOption: {
     backgroundColor: "#1E2127",
   },
   optionText: {
     color: "#fff",
-    fontSize: 16,
+    fontSize: getResponsiveFontSize(16),
   },
   selectedOptionText: {
     color: "#4b6cff",
@@ -952,10 +1023,11 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     borderRadius: 12,
     marginBottom: 16,
+    ...(isWeb && { cursor: 'pointer' }),
   },
   uploadText: {
     color: '#4b6cff',
-    fontSize: 16,
+    fontSize: getResponsiveFontSize(16),
     marginTop: 8,
     fontWeight: '500',
   },
@@ -963,11 +1035,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 10,
+    ...(isWeb && { cursor: 'pointer' }),
   },
   removeText: {
     color: '#ff4444',
     marginLeft: 8,
-    fontSize: 14,
+    fontSize: getResponsiveFontSize(14),
   },
   colorGrid: {
     flexDirection: 'row',
@@ -982,6 +1055,7 @@ const styles = StyleSheet.create({
     margin: '1%',
     justifyContent: 'center',
     alignItems: 'center',
+    ...(isWeb && { cursor: 'pointer' }),
   },
   selectedColorOption: {
     borderWidth: 3,

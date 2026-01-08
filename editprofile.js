@@ -12,6 +12,7 @@ import {
   Alert,
   Modal,
 } from "react-native";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { getAuth } from "firebase/auth";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
@@ -50,7 +51,7 @@ const Stat = ({ value, label }) => (
   </View>
 );
 
-export default function EditProfileScreen({ navigation }) {
+export default function EditProfileScreen({ navigation, route }) {
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editBio, setEditBio] = useState(false);
@@ -63,57 +64,169 @@ export default function EditProfileScreen({ navigation }) {
   useEffect(() => {
     const fetchUserData = async () => {
       try {
+        console.log('📝 Edit Profile: Starting to fetch user data...');
         const auth = getAuth(app);
         const user = auth.currentUser;
-        
-        if (user) {
-          // db is now imported globally
-          const userDoc = await getDoc(doc(db, 'users', user.uid));
-          
-          if (userDoc.exists()) {
-            const data = userDoc.data();
-            setUserData(data);
-            setBio(data.bio || data.user_biography || '');
-            setName({
-              firstName: data.firstName || data.user_firstname || '',
-              lastName: data.lastName || data.user_lastname || ''
-            });
-            setUsername(data.username || '');
-          }
+
+        console.log('📝 Edit Profile: Current user:', user ? user.uid : 'null');
+
+        if (!user) {
+          console.error('❌ Edit Profile: No authenticated user found!');
+          Alert.alert('Error', 'You must be logged in to edit your profile');
+          setLoading(false);
+          navigation.goBack();
+          return;
+        }
+
+        // Try to get data from navigation params first
+        const passedData = route?.params?.userData;
+        if (passedData) {
+          console.log('✅ Edit Profile: Using data passed from navigation');
+          setUserData(passedData);
+          setBio(passedData.bio || passedData.user_biography || '');
+          setName({
+            firstName: passedData.firstName || passedData.user_firstname || '',
+            lastName: passedData.lastName || passedData.user_lastname || ''
+          });
+          setUsername(passedData.username || '');
+          setLoading(false);
+          return;
+        }
+
+        // Try cache next
+        console.log('📝 Edit Profile: Checking cache...');
+        const cacheKey = `cache_user_profile_${user.uid}`;
+        const cachedData = await CacheManager.get(cacheKey);
+
+        if (cachedData) {
+          console.log('✅ Edit Profile: Using cached user data');
+          setUserData(cachedData);
+          setBio(cachedData.bio || cachedData.user_biography || '');
+          setName({
+            firstName: cachedData.firstName || cachedData.user_firstname || '',
+            lastName: cachedData.lastName || cachedData.user_lastname || ''
+          });
+          setUsername(cachedData.username || '');
+          setLoading(false);
+          return;
+        }
+
+        // Last resort: try Firestore with timeout
+        console.log('📝 Edit Profile: Fetching from Firestore for UID:', user.uid);
+        const userDocPromise = getDoc(doc(db, 'users', user.uid));
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Firestore request timeout')), 8000)
+        );
+
+        const userDoc = await Promise.race([userDocPromise, timeoutPromise]);
+
+        if (userDoc.exists()) {
+          const data = userDoc.data();
+          console.log('✅ Edit Profile: User data loaded from Firestore');
+          setUserData(data);
+          setBio(data.bio || data.user_biography || '');
+          setName({
+            firstName: data.firstName || data.user_firstname || '',
+            lastName: data.lastName || data.user_lastname || ''
+          });
+          setUsername(data.username || '');
+        } else {
+          console.error('❌ Edit Profile: User document does not exist');
+          Alert.alert('Error', 'User profile not found');
         }
       } catch (error) {
-        console.error('Error fetching user data:', error);
-        Alert.alert('Error', 'Failed to load user data');
+        console.error('❌ Edit Profile: Error:', error.message);
+        Alert.alert('Error', 'Failed to load profile. Please try again.');
       } finally {
+        console.log('✅ Edit Profile: Setting loading to false');
         setLoading(false);
       }
     };
 
     fetchUserData();
-  }, []);
+  }, [navigation, route]);
 
   // Update user profile
   const updateProfile = async (updates) => {
     try {
+      console.log('📝 Updating profile with:', updates);
       const auth = getAuth(app);
       const user = auth.currentUser;
-      
-      if (user) {
-        // db is now imported globally
-        const userRef = doc(db, 'users', user.uid);
-        await updateDoc(userRef, updates);
-        
-        // Update local state
-        setUserData(prev => ({ ...prev, ...updates }));
-        
-        // Clear cache so fresh data is fetched
-        await CacheManager.remove('cache_user_profile_', user.uid);
-        console.log('🗑️  Profile cache cleared after update');
-        
-        Alert.alert('Success', 'Profile updated successfully!');
+
+      if (!user) {
+        Alert.alert('Error', 'No user logged in');
+        return;
       }
+
+      // Update local state immediately for instant UI feedback
+      const updatedData = { ...userData, ...updates };
+      setUserData(updatedData);
+      console.log('✅ Local state updated');
+
+      // Save to AsyncStorage as backup (always succeeds)
+      try {
+        console.log('💾 Saving to AsyncStorage with key:', `profile_update_${user.uid}`);
+        console.log('💾 Data being saved:', JSON.stringify(updatedData).substring(0, 200));
+
+        await AsyncStorage.setItem(
+          `profile_update_${user.uid}`,
+          JSON.stringify(updatedData)
+        );
+        console.log('✅ Profile saved to AsyncStorage as backup');
+
+        // Also save to cache for instant display
+        console.log('📦 Saving to cache with userId:', user.uid);
+        const cacheResult = await CacheManager.saveUserProfile(user.uid, updatedData);
+        console.log('📦 Cache save result:', cacheResult);
+
+        // Verify cache was saved
+        const verifyCached = await CacheManager.getUserProfile(user.uid);
+        console.log('✅ Cache verification:', verifyCached ? 'Found' : 'NOT FOUND');
+      } catch (storageError) {
+        console.error('❌ Storage save failed:', storageError);
+      }
+
+      // Try to update Firestore with longer timeout
+      try {
+        const userRef = doc(db, 'users', user.uid);
+        const updatePromise = updateDoc(userRef, updates);
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Firestore update timeout')), 15000)
+        );
+
+        await Promise.race([updatePromise, timeoutPromise]);
+        console.log('✅ Firestore updated successfully');
+
+        // Clear AsyncStorage backup after successful Firestore update
+        await AsyncStorage.removeItem(`profile_update_${user.uid}`);
+      } catch (firestoreError) {
+        console.warn('⚠️ Firestore update failed:', firestoreError.message);
+        console.log('💾 Using AsyncStorage backup - profile will still update');
+        // Don't show error - we have AsyncStorage backup
+      }
+
+      // Save updated data to cache immediately for instant display
+      try {
+        await CacheManager.saveUserProfile(user.uid, updatedData);
+        console.log('✅ Profile cache updated with new data');
+      } catch (cacheError) {
+        console.warn('⚠️ Cache save failed:', cacheError);
+      }
+
+      Alert.alert('Success', 'Profile updated successfully!', [
+        {
+          text: 'OK',
+          onPress: () => {
+            // Navigate back and pass the updated data for immediate display
+            navigation.navigate('Profile', {
+              userData: updatedData,
+              refresh: Date.now() // Force refresh
+            });
+          }
+        }
+      ]);
     } catch (error) {
-      console.error('Error updating profile:', error);
+      console.error('❌ Error updating profile:', error);
       Alert.alert('Error', 'Failed to update profile');
     }
   };
@@ -136,7 +249,7 @@ export default function EditProfileScreen({ navigation }) {
         if (user) {
           // Compress image before upload
           const compressedUri = await compressProfileImage(result.assets[0].uri);
-          
+
           // Upload to Hostinger
           const imageUrl = await uploadImageToHostinger(
             compressedUri,
@@ -162,7 +275,22 @@ export default function EditProfileScreen({ navigation }) {
   if (loading) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <Text style={{ color: C.text }}>Loading...</Text>
+        <Text style={{ color: C.text, fontSize: 16 }}>Loading Profile...</Text>
+        <Text style={{ color: C.dim, fontSize: 12, marginTop: 8 }}>Please wait</Text>
+      </View>
+    );
+  }
+
+  if (!userData) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={{ color: C.text, fontSize: 16 }}>No Profile Data</Text>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={{ marginTop: 20, padding: 12, backgroundColor: C.brand, borderRadius: 8 }}
+        >
+          <Text style={{ color: C.text }}>Go Back</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -221,17 +349,17 @@ export default function EditProfileScreen({ navigation }) {
       <View style={styles.profileCard}>
         <View style={styles.avatarWrap}>
           <TouchableOpacity onPress={handleImagePick}>
-            <Image 
+            <Image
               source={
-                userData?.profileImage 
+                userData?.profileImage
                   ? { uri: userData.profileImage }
                   : require("./assets/profile.png")
-              } 
-              style={styles.avatar} 
+              }
+              style={styles.avatar}
             />
           </TouchableOpacity>
           <View style={styles.avatarRing} />
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.editAvatarBtn}
             onPress={handleImagePick}
           >
@@ -240,7 +368,7 @@ export default function EditProfileScreen({ navigation }) {
         </View>
 
         <View style={{ alignItems: "center", marginTop: 34 }}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={{ flexDirection: "row", alignItems: "center" }}
             onPress={() => setModalVisible(true)}
           >
@@ -250,9 +378,6 @@ export default function EditProfileScreen({ navigation }) {
           <Text style={styles.handle}>@{userData?.username || 'username'}</Text>
           <Text style={styles.joined}>
             Joined {new Date(userData?.createdAt).toLocaleDateString()}
-          </Text>
-          <Text style={styles.active}>
-            {userData?.lastActive ? 'Last seen ' + new Date(userData.lastActive).toLocaleDateString() : 'Active Now'}
           </Text>
         </View>
 
@@ -266,7 +391,7 @@ export default function EditProfileScreen({ navigation }) {
           <View style={styles.modalView}>
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>Edit Profile</Text>
-              
+
               <TextInput
                 style={styles.input}
                 placeholder="First Name"
@@ -274,7 +399,7 @@ export default function EditProfileScreen({ navigation }) {
                 value={name.firstName}
                 onChangeText={(text) => setName(prev => ({ ...prev, firstName: text }))}
               />
-              
+
               <TextInput
                 style={styles.input}
                 placeholder="Last Name"
@@ -282,7 +407,7 @@ export default function EditProfileScreen({ navigation }) {
                 value={name.lastName}
                 onChangeText={(text) => setName(prev => ({ ...prev, lastName: text }))}
               />
-              
+
               <TextInput
                 style={styles.input}
                 placeholder="Username"
@@ -290,16 +415,16 @@ export default function EditProfileScreen({ navigation }) {
                 value={username}
                 onChangeText={setUsername}
               />
-              
+
               <View style={styles.modalButtons}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.modalButton, { backgroundColor: C.border }]}
                   onPress={() => setModalVisible(false)}
                 >
                   <Text style={styles.buttonText}>Cancel</Text>
                 </TouchableOpacity>
-                
-                <TouchableOpacity 
+
+                <TouchableOpacity
                   style={[styles.modalButton, { backgroundColor: C.brand }]}
                   onPress={() => {
                     updateProfile({
@@ -334,8 +459,8 @@ export default function EditProfileScreen({ navigation }) {
         {/* Bio row WITH edit on right */}
         <View style={styles.subHeaderRow}>
           <Text style={styles.subHeader}>Bio</Text>
-          <TouchableOpacity 
-            style={styles.smallEdit} 
+          <TouchableOpacity
+            style={styles.smallEdit}
             onPress={() => {
               setEditBio(true);
               setBio(userData?.bio || '');
@@ -357,7 +482,7 @@ export default function EditProfileScreen({ navigation }) {
                 onChangeText={setBio}
               />
               <View style={styles.bioButtons}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.bioButton, { backgroundColor: C.border }]}
                   onPress={() => {
                     setBio(userData?.bio || '');
@@ -366,7 +491,7 @@ export default function EditProfileScreen({ navigation }) {
                 >
                   <Text style={styles.buttonText}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.bioButton, { backgroundColor: C.brand }]}
                   onPress={async () => {
                     await updateProfile({ bio });
@@ -378,8 +503,8 @@ export default function EditProfileScreen({ navigation }) {
               </View>
             </View>
           ) : (
-            <TouchableOpacity 
-              style={styles.bioTextContainer} 
+            <TouchableOpacity
+              style={styles.bioTextContainer}
               onPress={() => {
                 setEditBio(true);
                 setBio(userData?.bio || '');

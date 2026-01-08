@@ -11,16 +11,17 @@ import {
   ActivityIndicator,
   Modal,
   FlatList,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import NetInfo from '@react-native-community/netinfo';
 import { useFocusEffect } from '@react-navigation/native';
-import { 
-  collection, 
-  query, 
-  where, 
-  getDocs, 
+import {
+  collection,
+  query,
+  where,
+  getDocs,
   getDoc,
   limit,
   orderBy,
@@ -34,6 +35,18 @@ import {
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { app as firebaseApp, db } from './firebaseConfig';
 import CacheManager from './cacheManager';
+import StatusBadge from './components/StatusBadge';
+import StatusSelector from './components/StatusSelector';
+import {
+  isWeb,
+  isDesktopOrLarger,
+  getContainerWidth,
+  getResponsivePadding,
+  getResponsiveFontSize,
+  getResponsiveModalSize,
+  getGridColumns
+} from './utils/webResponsive';
+import DesktopHeader from './components/DesktopHeader';
 
 // Memoized community card component for better rendering performance
 const CommunityCard = React.memo(({ item, idx, onPress, showFollowedBadge, isJoined }) => (
@@ -196,6 +209,7 @@ export default function TopBar({ navigation, route }) {
   const [allCommunities, setAllCommunities] = useState([]);
   const [exploredCommunities, setExploredCommunities] = useState([]);
   const [joinedCommunities, setJoinedCommunities] = useState([]);
+  const [statusSelectorVisible, setStatusSelectorVisible] = useState(false);
   const [managedCommunities, setManagedCommunities] = useState([]);
   const [userProfile, setUserProfile] = useState(null);
   const [isConnected, setIsConnected] = useState(true);
@@ -281,7 +295,7 @@ export default function TopBar({ navigation, route }) {
   // Sync joinedCommunities when allCommunities changes - debounced for performance
   useEffect(() => {
     if (!auth.currentUser || allCommunities.length === 0) return;
-    
+
     const timeoutId = setTimeout(() => {
       const syncJoinedCommunities = async () => {
         try {
@@ -294,7 +308,7 @@ export default function TopBar({ navigation, route }) {
             const data = doc.data();
             return data.community_id || doc.id.split('_')[1];
           }).filter(Boolean);
-          
+
           const joinedIdsSet = new Set(joinedIds);
           const joinedComm = allCommunities.filter(
             comm => {
@@ -324,7 +338,7 @@ export default function TopBar({ navigation, route }) {
     try {
       const eventRef = doc(db, 'community_events', eventId);
       const userEventRef = doc(db, 'user_events', `${auth.currentUser.uid}_${eventId}`);
-      
+
       const eventDoc = await getDocs(collection(db, 'community_events'));
       const eventExists = eventDoc.docs.some(doc => doc.id === eventId);
       if (!eventExists) {
@@ -340,7 +354,7 @@ export default function TopBar({ navigation, route }) {
       });
 
       // Update local state
-      setCommunityEvents(prev => prev.map(event => 
+      setCommunityEvents(prev => prev.map(event =>
         event.id === eventId ? { ...event, joined: true } : event
       ));
 
@@ -370,7 +384,7 @@ export default function TopBar({ navigation, route }) {
   // Setup real-time listeners
   useEffect(() => {
     const newUnsubscribers = [];
-    
+
     // Load cached data immediately for instant UI
     const loadCachedData = async () => {
       if (auth.currentUser) {
@@ -433,7 +447,7 @@ export default function TopBar({ navigation, route }) {
           const communities = snapshot.docs.map(d => {
             const data = d.data();
             let img = null;
-            
+
             // Find first available image field
             for (const field of possibleFields) {
               if (data[field]) {
@@ -443,7 +457,7 @@ export default function TopBar({ navigation, route }) {
             }
 
             // Calculate member count efficiently
-            const memberCount = data.members_count 
+            const memberCount = data.members_count
               ?? (typeof data.community_members === 'number' ? data.community_members : 0)
               ?? (Array.isArray(data.members) ? data.members.length : 0)
               ?? 0;
@@ -464,7 +478,7 @@ export default function TopBar({ navigation, route }) {
           if (auth.currentUser) {
             // Update managed communities - show communities created by current user
             const managedComm = communities.filter(
-              comm => 
+              comm =>
                 comm.community_admin === auth.currentUser.uid ||
                 comm.uid === auth.currentUser.uid ||
                 comm.createdBy === auth.currentUser.uid ||
@@ -492,7 +506,7 @@ export default function TopBar({ navigation, route }) {
             const data = doc.data();
             return data.community_id || doc.id.split('_')[1]; // Support both field-based and composite ID
           }).filter(Boolean);
-          
+
           // Update joinedCommunities based on current allCommunities
           const joinedComm = allCommunities.filter(
             comm => {
@@ -554,11 +568,11 @@ export default function TopBar({ navigation, route }) {
           const communityData = route.params.openCommunityData;
           console.log('Opening validation for community:', communityData.name || communityData.community_title);
           openValidationFor(communityData);
-          
+
           // Clear the params after handling to prevent reopening
           navigation.setParams({ openCommunityId: undefined, openCommunityData: undefined });
         }, 150);
-        
+
         return () => clearTimeout(timer);
       }
     }, [route?.params?.openCommunityId, route?.params?.openCommunityData])
@@ -581,9 +595,24 @@ export default function TopBar({ navigation, route }) {
     return () => { mounted = false; unsubscribe(); };
   }, []);
 
+  const useDesktopLayout = isWeb && isDesktopOrLarger();
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
+
+      {/* Desktop Header */}
+      {useDesktopLayout && (
+        <DesktopHeader
+          userProfile={userProfile}
+          onSearchPress={() => navigation.navigate('SearchBar')}
+          onNotificationsPress={() => navigation.navigate('Notification')}
+          onSettingsPress={() => navigation.navigate('Profile')}
+          onProfilePress={() => navigation.navigate('Profile')}
+          navigation={navigation}
+        />
+      )}
+
       {/* Validation modal shown before entering a community */}
       <Modal visible={showValidationModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
@@ -597,15 +626,15 @@ export default function TopBar({ navigation, route }) {
               <Text style={styles.modalTitle}>{validationStep === 0 ? `Welcome to\n${selectedCommunityForValidation?.name || selectedCommunityForValidation?.community_title || 'Community'}` : validationStep === 1 ? 'Start connecting with other members' : 'All Set!'}</Text>
 
               {selectedCommunityForValidation?.profileImage || (selectedCommunityForValidation?.img?.uri) ? (
-                <Image 
+                <Image
                   source={
-                    selectedCommunityForValidation?.profileImage 
-                      ? { uri: selectedCommunityForValidation.profileImage } 
-                      : selectedCommunityForValidation?.img?.uri 
+                    selectedCommunityForValidation?.profileImage
+                      ? { uri: selectedCommunityForValidation.profileImage }
+                      : selectedCommunityForValidation?.img?.uri
                         ? { uri: selectedCommunityForValidation.img.uri }
                         : selectedCommunityForValidation.img
-                  } 
-                  style={styles.modalAvatar} 
+                  }
+                  style={styles.modalAvatar}
                 />
               ) : (
                 <View style={[styles.modalAvatar, { backgroundColor: '#E1E8ED', justifyContent: 'center', alignItems: 'center' }]}>
@@ -626,7 +655,7 @@ export default function TopBar({ navigation, route }) {
       </Modal>
 
       {/* 🔝 Top Bar */}
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, useDesktopLayout && { display: 'none' }]}>
         <View style={styles.profileContainer}>
           <Image
             source={getUserImage(userProfile)}
@@ -647,9 +676,16 @@ export default function TopBar({ navigation, route }) {
                 />
               )}
             </View>
-            <Text style={[styles.profileStatus, { color: isConnected ? '#08FFE2' : '#666' }]}> 
-              ● {isConnected ? 'Online' : 'Offline'}
-            </Text>
+            {/* User Status Badge */}
+            <View style={{ marginTop: 4 }}>
+              <TouchableOpacity onPress={() => setStatusSelectorVisible(true)}>
+                <StatusBadge
+                  isOwnStatus={true}
+                  size="small"
+                  showEditIcon={false}
+                />
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
@@ -742,29 +778,29 @@ export default function TopBar({ navigation, route }) {
             </>
           )}
 
-        {/* === JOINED TAB === */}
-        {activeButton === 'Joined' && (
-          <View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
-              {categories.map((cat) => {
-                const isActive = activeCategoryJoined === cat;
-                return (
-                  <TouchableOpacity 
-                    key={cat + '_joined'} 
-                    onPress={() => setActiveCategoryJoined(cat)} 
-                    style={styles.categoryButton}
-                  >
-                    <Text style={[styles.categoryText, { color: isActive ? '#fff' : '#aaa' }]}>{cat}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+          {/* === JOINED TAB === */}
+          {activeButton === 'Joined' && (
+            <View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
+                {categories.map((cat) => {
+                  const isActive = activeCategoryJoined === cat;
+                  return (
+                    <TouchableOpacity
+                      key={cat + '_joined'}
+                      onPress={() => setActiveCategoryJoined(cat)}
+                      style={styles.categoryButton}
+                    >
+                      <Text style={[styles.categoryText, { color: isActive ? '#fff' : '#aaa' }]}>{cat}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
 
-            {/* Joined Communities Grid */}
-            <View style={styles.eventsContainer}>
-              {joinedCommunities.length > 0 ? (
-                <View style={styles.gridContainer}>
-                  {filteredJoinedCommunities.map((item, idx) => (
+              {/* Joined Communities Grid */}
+              <View style={styles.eventsContainer}>
+                {joinedCommunities.length > 0 ? (
+                  <View style={styles.gridContainer}>
+                    {filteredJoinedCommunities.map((item, idx) => (
                       <CommunityCard
                         key={item.community_id || item.id || idx.toString()}
                         item={item}
@@ -774,139 +810,235 @@ export default function TopBar({ navigation, route }) {
                         isJoined={false}
                       />
                     ))}
-                </View>
-              ) : (
-                <View style={{ padding: 20, alignItems: 'center' }}>
-                  <Text style={{ color: '#666', fontSize: 14 }}>No joined communities yet</Text>
-                  <Text style={{ color: '#888', fontSize: 12, marginTop: 5 }}>
-                    Explore communities to join them
-                  </Text>
-                </View>
-              )}
+                  </View>
+                ) : (
+                  <View style={{ padding: 20, alignItems: 'center' }}>
+                    <Text style={{ color: '#666', fontSize: 14 }}>No joined communities yet</Text>
+                    <Text style={{ color: '#888', fontSize: 12, marginTop: 5 }}>
+                      Explore communities to join them
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {/* 🌈 Gradient Button: Explore More → */}
+
             </View>
+          )}
 
-            {/* 🌈 Gradient Button: Explore More → */}
-          
-          </View>
-        )}
+          {/* === MANAGED TAB === */}
+          {activeButton === 'Managed by you' && (
+            <>
+              {/* Managed Communities Grid */}
+              <View style={styles.eventsContainer}>
+                <Text style={styles.sectionTitle}>Communities</Text>
+                {managedCommunities.length > 0 ? (
+                  <View style={styles.gridContainer}>
+                    {managedCommunities.map((item, idx) => (
+                      <CommunityCard
+                        key={item.community_id || item.id || idx.toString()}
+                        item={item}
+                        idx={idx}
+                        onPress={() => navigation.navigate('GroupInfo', { communityId: item.community_id || item.id })}
+                        showFollowedBadge={true}
+                        isJoined={joinedCommunityIds.has(item.community_id || item.id)}
+                      />
+                    ))}
+                  </View>
+                ) : (
+                  <View style={styles.noEventsContainer}>
+                    <Text style={styles.noEventsText}>No communities found</Text>
+                  </View>
+                )}
+              </View>
 
-        {/* === MANAGED TAB === */}
-        {activeButton === 'Managed by you' && (
-          <View>
-            <Text style={styles.cardTitle}>Communities Managed by You</Text>
-{/* thoes communities that the user is the admin of that community will be shown here */}
-            {/* Managed Communities Grid */}
-            <View style={styles.eventsContainer}>
-              {managedCommunities.length > 0 ? (
-                <View style={styles.gridContainer}>
-                  {managedCommunities.map((item, idx) => (
-                    <TouchableOpacity
-                      key={item.community_id || item.id || idx.toString()}
-                      style={styles.eventCardGrid}
-                      onPress={() => navigation.navigate('GroupInfo', { communityId: item.community_id || item.id })}
-                      activeOpacity={0.8}
-                    >
-                      <View style={{ position: 'relative' }}>
-                        <Image
-                          source={item.img || require('./assets/profile.png')}
-                          style={styles.eventImageGrid}
-                        />
-                      </View>
-                      <Text style={styles.eventTitle} numberOfLines={1}>
-                        {item.name || item.community_title || item.title || 'Community'}
-                      </Text>
-                      <Text style={styles.eventDate} numberOfLines={1}>
-                        {item.category || item.community_category || ''}
-                      </Text>
-                      {!!item.description && (
-                        <Text style={[styles.eventDate, { color: '#aaa', marginTop: 4 }]} numberOfLines={2}>
-                          {item.description}
-                        </Text>
-                      )}
-                      <View style={{ marginTop: 6 }}>
-                        <Text style={styles.joinButtonText}>{item.community_members ? (Array.isArray(item.community_members) ? item.community_members.length : item.community_members) : '—'} members</Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              ) : (
-                <View style={{ padding: 20, alignItems: 'center' }}>
-                  <Text style={{ color: '#666', fontSize: 14 }}>No managed communities yet</Text>
-                  <Text style={{ color: '#888', fontSize: 12, marginTop: 5 }}>
-                    Create a community to manage it
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            {/* ✏️ Gradient Button: Create New Community */}
-            <TouchableOpacity 
-              activeOpacity={0.8} 
-              style={{ alignSelf: 'center', marginTop: 15 }}
-              onPress={() => navigation.navigate('CreateCommunityScreen')}
-            >
-              <LinearGradient
-                colors={['rgba(255, 6, 200, 0.4)', 'rgba(255, 6, 200, 0.1)']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[styles.gradientButton, { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 }]}
+              {/* ✏️ Gradient Button: Create New Community */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={{ alignSelf: 'center', marginTop: 15 }}
+                onPress={() => navigation.navigate('CreateCommunityScreen')}
               >
-                <Ionicons name="create-outline" size={18} color="#fff" />
-                <Text style={styles.gradientButtonText}>Create New Community</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-        )}
+                <LinearGradient
+                  colors={['rgba(255, 6, 200, 0.4)', 'rgba(255, 6, 200, 0.1)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[styles.gradientButton, { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 }]}
+                >
+                  <Ionicons name="create-outline" size={18} color="#fff" />
+                  <Text style={styles.gradientButtonText}>Create New Community</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </>
+          )}
         </ScrollView>
       )}
 
+      {/* Status Selector Modal */}
+      <StatusSelector
+        visible={statusSelectorVisible}
+        onClose={() => setStatusSelectorVisible(false)}
+        title="Update Your Status"
+      />
     </View>
   );
-}const styles = StyleSheet.create({
-  container: { backgroundColor: '#000', flex: 1 },
-  loadingContainer: { 
-    flex: 1, 
-    justifyContent: 'center', 
+} const styles = StyleSheet.create({
+  container: {
+    backgroundColor: '#000',
+    flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#000' 
+    backgroundColor: '#000'
   },
-  loadingText: { 
-    color: '#fff', 
+  loadingText: {
+    color: '#fff',
     marginTop: 10,
-    fontSize: 16 
+    fontSize: getResponsiveFontSize(16)
   },
-  topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 40, paddingBottom: 15 },
-  profileContainer: { flexDirection: 'row', alignItems: 'center' },
-  profileImage: { width: 50, height: 50, borderRadius: 25, borderWidth: 2, borderColor: '#08FFE2' },
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: getResponsivePadding(20),
+    paddingTop: 40,
+    paddingBottom: 15,
+    width: '100%',
+  },
+  profileContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    ...(isWeb && { cursor: 'pointer' }),
+  },
+  profileImage: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 2,
+    borderColor: '#08FFE2'
+  },
   profileTextContainer: { marginLeft: 15 },
-  profileName: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  profileStatus: { color: '#08FFE2', fontSize: 14, marginTop: 3 },
+  profileName: {
+    color: '#fff',
+    fontSize: getResponsiveFontSize(18),
+    fontWeight: '700'
+  },
+  profileStatus: {
+    color: '#08FFE2',
+    fontSize: getResponsiveFontSize(14),
+    marginTop: 3
+  },
   iconsContainer: { flexDirection: 'row', alignItems: 'center' },
-  iconButton: { marginLeft: 15 },
+  iconButton: {
+    marginLeft: 15,
+    ...(isWeb && { cursor: 'pointer' }),
+  },
 
-  buttonContainer: { flexDirection: 'row', justifyContent: 'space-around', marginTop: 10, paddingHorizontal: 15 },
-  activeButton: { borderWidth: 1, borderColor: '#BF2EF0', borderRadius: 8, paddingVertical: 8, alignItems: 'center', justifyContent: 'center' },
-  activeButtonText: { color: '#fff', fontWeight: '600' },
-  inactiveButton: { borderWidth: 1, borderColor: '#222', borderRadius: 8, paddingVertical: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: '#111' },
-  inactiveButtonText: { color: '#aaa', fontWeight: '500' },
+  buttonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 10,
+    paddingHorizontal: getResponsivePadding(15),
+    width: '100%',
+  },
+  activeButton: {
+    borderWidth: 1,
+    borderColor: '#BF2EF0',
+    borderRadius: 8,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...(isWeb && { cursor: 'pointer' }),
+  },
+  activeButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: getResponsiveFontSize(14),
+  },
+  inactiveButton: {
+    borderWidth: 1,
+    borderColor: '#222',
+    borderRadius: 8,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#111',
+    ...(isWeb && { cursor: 'pointer' }),
+  },
+  inactiveButtonText: {
+    color: '#aaa',
+    fontWeight: '500',
+    fontSize: getResponsiveFontSize(14),
+  },
 
-  cardContainer: { paddingHorizontal: 15, paddingVertical: 20 },
-  card: { width: 328, height: 186, borderRadius: 20, borderWidth: 1, borderColor: '#222', backgroundColor: '#111', padding: 6, alignSelf: 'center', marginBottom: 20 },
+  cardContainer: {
+    paddingHorizontal: getResponsivePadding(15),
+    paddingVertical: 20,
+    width: '100%',
+  },
+  card: {
+    width: '100%',
+    height: 186,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#222',
+    backgroundColor: '#111',
+    padding: 6,
+    marginBottom: 20
+  },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  cardTitle: { color: '#08FFE2', fontSize: 16, fontWeight: '700' },
-  viewAllText: { color: '#fff', fontSize: 14, fontWeight: '500' },
+  cardTitle: {
+    color: '#08FFE2',
+    fontSize: getResponsiveFontSize(16),
+    fontWeight: '700'
+  },
+  viewAllText: {
+    color: '#fff',
+    fontSize: getResponsiveFontSize(14),
+    fontWeight: '500',
+    ...(isWeb && { cursor: 'pointer' }),
+  },
   categoryScroll: { marginBottom: 10 },
-  categoryButton: { borderWidth: 0, borderRadius: 8, paddingVertical: 4, paddingHorizontal: 8, marginRight: 6 },
-  categoryText: { fontSize: 12, fontWeight: '500' },
+  categoryButton: {
+    borderWidth: 0,
+    borderRadius: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    marginRight: 6,
+    ...(isWeb && { cursor: 'pointer' }),
+  },
+  categoryText: {
+    fontSize: getResponsiveFontSize(12),
+    fontWeight: '500'
+  },
   imageRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  cardImage: { width: 92, height: 92, borderRadius: 10, overflow: 'hidden' },
-  joinedImage: { width: 92, height: 92, borderRadius: 10, overflow: 'hidden', marginRight: 10 },
+  cardImage: {
+    width: 92,
+    height: 92,
+    borderRadius: 10,
+    overflow: 'hidden',
+    ...(isWeb && { cursor: 'pointer' }),
+  },
+  joinedImage: {
+    width: 92,
+    height: 92,
+    borderRadius: 10,
+    overflow: 'hidden',
+    marginRight: 10,
+    ...(isWeb && { cursor: 'pointer' }),
+  },
   imageOverlay: { flex: 1, justifyContent: 'flex-end', paddingBottom: 5, backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 10 },
-  imageText: { color: '#fff', fontSize: 12, fontWeight: '600', textAlign: 'center' },
+  imageText: {
+    color: '#fff',
+    fontSize: getResponsiveFontSize(12),
+    fontWeight: '600',
+    textAlign: 'center'
+  },
 
   // 🌈 Gradient Button Style
   gradientButton: {
-    width: 328,
+    width: '100%',
     height: 41,
     borderRadius: 12,
     paddingVertical: 8,
@@ -920,54 +1052,60 @@ export default function TopBar({ navigation, route }) {
     shadowRadius: 9.9,
     shadowOffset: { width: 0, height: 0 },
     backgroundColor: 'rgba(255, 6, 200, 0.1)',
+    ...(isWeb && { cursor: 'pointer' }),
   },
   gradientButtonText: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: getResponsiveFontSize(14),
     fontWeight: '600',
   },
 
   // Events Section Styles
   eventsContainer: {
-    paddingHorizontal: 15,
+    paddingHorizontal: getResponsivePadding(15),
     paddingTop: 20,
     paddingBottom: 10,
+    width: '100%',
   },
   sectionTitle: {
     color: '#08FFE2',
-    fontSize: 18,
+    fontSize: getResponsiveFontSize(18),
     fontWeight: '700',
     marginBottom: 15,
   },
   eventCard: {
-    width: 160,
+    width: isWeb ? Math.max(160, getContainerWidth() / 5) : 160,
     backgroundColor: '#111',
     borderRadius: 12,
     padding: 10,
     marginRight: 12,
     borderWidth: 1,
     borderColor: '#222',
+    ...(isWeb && { cursor: 'pointer' }),
   },
   eventCardGrid: {
-    width: '48%',
+    width: isWeb ? `${100 / getGridColumns(200) - 2}%` : '48%',
     backgroundColor: '#111',
     borderRadius: 12,
     padding: 10,
     marginBottom: 12,
     borderWidth: 1,
     borderColor: '#222',
+    ...(isWeb && { cursor: 'pointer' }),
   },
   eventImage: {
     width: '100%',
-    height: 100,
+    aspectRatio: 1,
     borderRadius: 8,
     marginBottom: 8,
+    resizeMode: 'contain',
   },
   eventImageGrid: {
     width: '100%',
-    height: 120,
+    aspectRatio: 1,
     borderRadius: 8,
     marginBottom: 8,
+    resizeMode: 'contain',
   },
   gridContainer: {
     flexDirection: 'row',
@@ -978,13 +1116,13 @@ export default function TopBar({ navigation, route }) {
   },
   eventTitle: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: getResponsiveFontSize(14),
     fontWeight: '600',
     marginBottom: 4,
   },
   eventDate: {
     color: '#666',
-    fontSize: 12,
+    fontSize: getResponsiveFontSize(12),
     marginBottom: 8,
   },
   joinButton: {
@@ -993,10 +1131,11 @@ export default function TopBar({ navigation, route }) {
     paddingHorizontal: 12,
     borderRadius: 6,
     alignItems: 'center',
+    ...(isWeb && { cursor: 'pointer' }),
   },
   joinButtonText: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: getResponsiveFontSize(12),
     fontWeight: '600',
   },
   joinedButton: {
@@ -1019,20 +1158,84 @@ export default function TopBar({ navigation, route }) {
   },
   noEventsText: {
     color: '#666',
-    fontSize: 14,
+    fontSize: getResponsiveFontSize(14),
     textAlign: 'center',
   },
   // Modal / validation flow styles
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  modalCard: { width: '100%', maxWidth: 360, borderRadius: 12 },
-  modalTitle: { color: '#fff', fontSize: 20, fontWeight: '800', textAlign: 'center', marginBottom: 12 },
-  modalAvatar: { width: 88, height: 88, borderRadius: 44, alignSelf: 'center', marginVertical: 8, borderWidth: 2, borderColor: '#fff' },
-  modalText: { color: '#e6eef0', fontSize: 14, textAlign: 'center', marginTop: 8 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20
+  },
+  modalCard: {
+    width: '100%',
+    borderRadius: 12
+  },
+  modalTitle: {
+    color: '#fff',
+    fontSize: getResponsiveFontSize(20),
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 12
+  },
+  modalAvatar: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    alignSelf: 'center',
+    marginVertical: 8,
+    borderWidth: 2,
+    borderColor: '#fff'
+  },
+  modalText: {
+    color: '#e6eef0',
+    fontSize: getResponsiveFontSize(14),
+    textAlign: 'center',
+    marginTop: 8
+  },
   modalFooter: { marginTop: 16, alignItems: 'center' },
-  modalButton: { backgroundColor: 'rgba(255,255,255,0.06)', paddingVertical: 10, paddingHorizontal: 22, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)' },
-  modalButtonText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  followedBadge: { position: 'absolute', top: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
-  followedBadgeSmall: { position: 'absolute', top: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
-  followedBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  modalButton: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    paddingVertical: 10,
+    paddingHorizontal: 22,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    ...(isWeb && { cursor: 'pointer' }),
+  },
+  modalButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: getResponsiveFontSize(15)
+  },
+  followedBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)'
+  },
+  followedBadgeSmall: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)'
+  },
+  followedBadgeText: {
+    color: '#fff',
+    fontSize: getResponsiveFontSize(11),
+    fontWeight: '700'
+  },
 });
 

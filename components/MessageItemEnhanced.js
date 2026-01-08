@@ -1,34 +1,34 @@
 // components/MessageItem.js
 import React, { useState } from 'react';
-import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  TouchableWithoutFeedback, 
-  StyleSheet, 
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  StyleSheet,
   Image,
   Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SystemMessage } from './SystemMessage';
 
-export function MessageItem({ 
-  message, 
-  currentUserId, 
-  onEdit, 
-  onDelete, 
-  onReact, 
-  onReply, 
+export function MessageItem({
+  message,
+  currentUserId,
+  onEdit,
+  onDelete,
+  onReact,
+  onReply,
   onForward,
-  onLongPress 
+  onLongPress
 }) {
   const isOwnMessage = message.senderId === currentUserId;
-  
+
   // Don't show if deleted for this user
   if (message.deletedFor?.includes(currentUserId)) {
     return null;
   }
-  
+
   const handleLongPress = () => {
     if (onLongPress) {
       onLongPress(message);
@@ -39,11 +39,11 @@ export function MessageItem({
   if (message.type === 'system') {
     return <SystemMessage message={message} />;
   }
-  
+
   return (
     <TouchableWithoutFeedback onLongPress={handleLongPress}>
       <View style={[
-        styles.messageContainer, 
+        styles.messageContainer,
         isOwnMessage ? styles.ownMessage : styles.otherMessage
       ]}>
         {/* Forwarded indicator */}
@@ -53,7 +53,7 @@ export function MessageItem({
             <Text style={styles.forwardedText}>Forwarded</Text>
           </View>
         )}
-        
+
         {/* Reply context */}
         {message.replyTo && (
           <View style={styles.replyContext}>
@@ -68,34 +68,41 @@ export function MessageItem({
             </View>
           </View>
         )}
-        
+
         {/* Message content */}
         {message.type === 'text' && (
           <Text style={styles.messageText}>
-            {message.isDeleted ? '🚫 This message was deleted' : message.text}
+            {message.isDeleted ? '🚫 This message was deleted' : (message.text || '[No text]')}
           </Text>
         )}
-        
+
+        {/* Show text even if type is not explicitly 'text' but text exists */}
+        {!message.type && message.text && (
+          <Text style={styles.messageText}>
+            {message.text}
+          </Text>
+        )}
+
         {message.type === 'image' && message.mediaUrl && !message.isDeleted && (
-          <Image 
-            source={{ uri: message.mediaUrl }} 
+          <Image
+            source={{ uri: message.mediaUrl }}
             style={styles.messageImage}
             resizeMode="cover"
           />
         )}
 
         {message.type === 'image' && message.url && !message.isDeleted && (
-          <Image 
-            source={{ uri: message.url }} 
+          <Image
+            source={{ uri: message.url }}
             style={styles.messageImage}
             resizeMode="cover"
           />
         )}
-        
+
         {message.type === 'video' && (message.mediaUrl || message.url) && !message.isDeleted && (
           <View style={styles.videoContainer}>
-            <Image 
-              source={{ uri: message.mediaThumbnail || message.mediaUrl || message.url }} 
+            <Image
+              source={{ uri: message.mediaThumbnail || message.mediaUrl || message.url }}
               style={styles.messageImage}
               resizeMode="cover"
             />
@@ -124,7 +131,7 @@ export function MessageItem({
             </Text>
           </View>
         )}
-        
+
         {/* Message info */}
         {message.type !== 'system' && (
           <View style={styles.messageInfo}>
@@ -137,7 +144,7 @@ export function MessageItem({
             )}
           </View>
         )}
-        
+
         {/* Reactions */}
         {message.reactions && Object.keys(message.reactions).length > 0 && (
           <View style={styles.reactions}>
@@ -176,9 +183,9 @@ function MessageStatusIcon({ status }) {
 
 function getMessageStatus(message, currentUserId) {
   if (!message.status) return 'sent';
-  
+
   const { delivered, read } = message.status;
-  
+
   if (read && Object.keys(read).some(uid => uid !== currentUserId)) {
     return 'read';
   }
@@ -223,14 +230,17 @@ const styles = StyleSheet.create({
   },
   messageImage: {
     width: 200,
-    height: 200,
+    aspectRatio: 1,
+    maxHeight: 300,
     borderRadius: 8,
-    marginBottom: 4
+    marginBottom: 4,
+    resizeMode: 'contain'
   },
   videoContainer: {
     position: 'relative',
     width: 200,
-    height: 200
+    aspectRatio: 1,
+    maxHeight: 300
   },
   playButton: {
     position: 'absolute',

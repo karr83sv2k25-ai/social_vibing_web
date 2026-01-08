@@ -33,7 +33,7 @@ export default function LoginScreen({ navigation }) {
       });
 
       const data = await response.json();
-      
+
       if (data.success) {
         // Store user data in context or async storage
         // Navigate to tab navigator so bottom tabs are visible
@@ -54,7 +54,8 @@ export default function LoginScreen({ navigation }) {
   return (
     <ImageBackground
       source={require('./assets/login_bg.png')}
-      style={styles.background}>
+      style={styles.background}
+      resizeMode="cover">
       <View style={styles.headingContainer}>
         <Text style={styles.logo}>Social Vibing</Text>
         <Text style={styles.subtitle}>Social Vibing</Text>
@@ -81,6 +82,8 @@ export default function LoginScreen({ navigation }) {
 const styles = StyleSheet.create({
   background: {
     flex: 1,
+    width: '100%',
+    height: '100%',
     justifyContent: 'space-between',
     paddingBottom: 100,
   },

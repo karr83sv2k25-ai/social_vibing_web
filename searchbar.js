@@ -25,7 +25,7 @@ export default function HeaderWithSearch({ navigation }) {
   useEffect(() => {
     // db is now imported globally
     const usersCol = collection(db, 'users');
-    
+
     const unsubscribe = onSnapshot(usersCol, (snapshot) => {
       const usersData = snapshot.docs.map((docSnap) => {
         const data = docSnap.data();
@@ -51,17 +51,17 @@ export default function HeaderWithSearch({ navigation }) {
   // Fetch shops/marketplace from Firestore (real-time)
   useEffect(() => {
     // db is now imported globally
-    
+
     // Check if marketplace collection exists
     const marketplaceCol = collection(db, 'marketplace');
-    
+
     const unsubscribe = onSnapshot(marketplaceCol, async (snapshot) => {
       const shopsData = await Promise.all(
         snapshot.docs.map(async (docSnap) => {
           const data = docSnap.data();
           let ownerName = 'Owner';
           let ownerPic = null;
-          
+
           // Fetch owner details if ownerId exists
           if (data.ownerId) {
             try {
@@ -76,7 +76,7 @@ export default function HeaderWithSearch({ navigation }) {
               console.log('Error fetching owner:', e);
             }
           }
-          
+
           return {
             id: docSnap.id,
             name: data.name || data.title || 'Shop',
@@ -101,14 +101,14 @@ export default function HeaderWithSearch({ navigation }) {
   useEffect(() => {
     // db is now imported globally
     const communitiesCol = collection(db, 'communities');
-    
+
     const unsubscribe = onSnapshot(communitiesCol, (snapshot) => {
       const communitiesData = snapshot.docs.map((docSnap) => {
         const data = docSnap.data();
-        const memberCount = typeof data.community_members === 'number' 
-          ? data.community_members 
+        const memberCount = typeof data.community_members === 'number'
+          ? data.community_members
           : (Array.isArray(data.members) ? data.members.length : 0);
-        
+
         return {
           id: docSnap.id,
           title: data.name || 'Community',
@@ -130,31 +130,31 @@ export default function HeaderWithSearch({ navigation }) {
   useEffect(() => {
     // db is now imported globally
     const unsubscribes = [];
-    
+
     const fetchAllPosts = async () => {
       try {
         const communitiesSnapshot = await getDocs(collection(db, 'communities'));
         const communities = communitiesSnapshot.docs;
-        
+
         for (const commDoc of communities) {
           const commId = commDoc.id;
-          
+
           // Fetch blogs
           try {
             const blogsCol = collection(db, 'communities', commId, 'blogs');
             const blogsQuery = query(blogsCol, orderBy('createdAt', 'desc'));
-            
+
             const blogsUnsub = onSnapshot(blogsQuery, async (snapshot) => {
               const allPostsData = [];
-              
+
               for (const blogDoc of snapshot.docs) {
                 const blogData = blogDoc.data();
                 const authorId = blogData.authorId;
-                
+
                 let authorName = 'User';
                 let authorImage = null;
                 let username = '';
-                
+
                 if (authorId) {
                   try {
                     const userRef = doc(db, 'users', authorId);
@@ -169,7 +169,7 @@ export default function HeaderWithSearch({ navigation }) {
                     console.log('Error fetching author:', e);
                   }
                 }
-                
+
                 allPostsData.push({
                   id: blogDoc.id,
                   type: 'blog',
@@ -183,7 +183,7 @@ export default function HeaderWithSearch({ navigation }) {
                   createdAt: blogData.createdAt,
                 });
               }
-              
+
               // Update posts state
               setPosts((prev) => {
                 const filtered = prev.filter(p => p.type !== 'blog' || p.communityId !== commId);
@@ -194,28 +194,28 @@ export default function HeaderWithSearch({ navigation }) {
                 });
               });
             });
-            
+
             unsubscribes.push(blogsUnsub);
           } catch (e) {
             console.log('Error setting up blogs listener:', e);
           }
-          
+
           // Fetch posts
           try {
             const postsCol = collection(db, 'communities', commId, 'posts');
             const postsQuery = query(postsCol, orderBy('createdAt', 'desc'));
-            
+
             const postsUnsub = onSnapshot(postsQuery, async (snapshot) => {
               const allPostsData = [];
-              
+
               for (const postDoc of snapshot.docs) {
                 const postData = postDoc.data();
                 const authorId = postData.authorId;
-                
+
                 let authorName = 'User';
                 let authorImage = null;
                 let username = '';
-                
+
                 if (authorId) {
                   try {
                     const userRef = doc(db, 'users', authorId);
@@ -230,9 +230,9 @@ export default function HeaderWithSearch({ navigation }) {
                     console.log('Error fetching author:', e);
                   }
                 }
-                
+
                 const images = postData.imageUri ? [postData.imageUri] : [];
-                
+
                 allPostsData.push({
                   id: postDoc.id,
                   type: 'image',
@@ -246,7 +246,7 @@ export default function HeaderWithSearch({ navigation }) {
                   createdAt: postData.createdAt,
                 });
               }
-              
+
               // Update posts state
               setPosts((prev) => {
                 const filtered = prev.filter(p => p.type !== 'image' || p.communityId !== commId);
@@ -257,7 +257,7 @@ export default function HeaderWithSearch({ navigation }) {
                 });
               });
             });
-            
+
             unsubscribes.push(postsUnsub);
           } catch (e) {
             console.log('Error setting up posts listener:', e);
@@ -267,9 +267,9 @@ export default function HeaderWithSearch({ navigation }) {
         console.log('Error fetching communities for posts:', e);
       }
     };
-    
+
     fetchAllPosts();
-    
+
     return () => {
       unsubscribes.forEach((unsub) => unsub());
     };
@@ -278,7 +278,7 @@ export default function HeaderWithSearch({ navigation }) {
   // Filter data based on search query
   const filterData = (data, searchQuery) => {
     if (!searchQuery.trim()) return data;
-    
+
     const query = searchQuery.toLowerCase();
     return data.filter((item) => {
       if (item.name && item.name.toLowerCase().includes(query)) return true;
@@ -300,15 +300,15 @@ export default function HeaderWithSearch({ navigation }) {
 
   // User row
   const renderUserRow = (item) => (
-    <TouchableOpacity 
-      key={item.id} 
+    <TouchableOpacity
+      key={item.id}
       style={styles.userRow}
       onPress={() => navigation.navigate('Profile', { userId: item.id })}
     >
       {item.pic ? (
-        <Image 
-          source={{ uri: item.pic }} 
-          style={styles.userPic} 
+        <Image
+          source={{ uri: item.pic }}
+          style={styles.userPic}
         />
       ) : (
         <View style={[styles.userPic, { backgroundColor: '#E1E8ED', justifyContent: 'center', alignItems: 'center' }]}>
@@ -319,7 +319,7 @@ export default function HeaderWithSearch({ navigation }) {
         <Text style={styles.nameText}>{item.name}</Text>
         <Text style={styles.subText}>{item.bio || item.username || ''}</Text>
       </View>
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.visitButton}
         onPress={() => navigation.navigate('Profile', { userId: item.id })}
       >
@@ -330,14 +330,14 @@ export default function HeaderWithSearch({ navigation }) {
 
   // Shop row
   const renderShopRow = (shop) => (
-    <TouchableOpacity 
-      key={shop.id} 
+    <TouchableOpacity
+      key={shop.id}
       style={styles.userRow}
       onPress={() => navigation.navigate('MarketPlace', { shopId: shop.id })}
     >
-      <Image 
-        source={shop.pic ? { uri: shop.pic } : require('./assets/post2.png')} 
-        style={styles.shopPic} 
+      <Image
+        source={shop.pic ? { uri: shop.pic } : require('./assets/post2.png')}
+        style={styles.shopPic}
       />
       <View style={{ flex: 1, marginLeft: 15 }}>
         <Text style={styles.nameText}>{shop.name}</Text>
@@ -346,16 +346,16 @@ export default function HeaderWithSearch({ navigation }) {
             <Text style={styles.ownerText}>Owner: {shop.owner}</Text>
           </View>
           <View style={styles.profileContainer}>
-            <Image 
-              source={shop.ownerPic ? { uri: shop.ownerPic } : require('./assets/a1.png')} 
-              style={styles.profilePic} 
+            <Image
+              source={shop.ownerPic ? { uri: shop.ownerPic } : require('./assets/a1.png')}
+              style={styles.profilePic}
             />
             <Text style={styles.profileName}>{shop.owner}</Text>
             <Image source={starImage} style={styles.profileIcon} />
           </View>
         </View>
       </View>
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.visitButton}
         onPress={() => navigation.navigate('MarketPlace', { shopId: shop.id })}
       >
@@ -366,14 +366,14 @@ export default function HeaderWithSearch({ navigation }) {
 
   // Community row
   const renderCommunityRow = (item) => (
-    <TouchableOpacity 
-      key={item.id} 
+    <TouchableOpacity
+      key={item.id}
       style={styles.communityRow}
       onPress={() => navigation.navigate('GroupInfo', { communityId: item.id, groupTitle: item.title })}
     >
-      <Image 
-        source={item.image ? { uri: item.image } : require('./assets/posticon.jpg')} 
-        style={styles.communityImage} 
+      <Image
+        source={item.image ? { uri: item.image } : require('./assets/posticon.jpg')}
+        style={styles.communityImage}
       />
       <View style={{ marginLeft: 15, justifyContent: 'center', flex: 1 }}>
         <Text style={styles.communityTitle}>{item.title}</Text>
@@ -384,11 +384,11 @@ export default function HeaderWithSearch({ navigation }) {
         </View>
 
         {item.category && (
-        <View style={styles.tagContainer}>
-          <TouchableOpacity style={[styles.tagButton, { borderColor: '#00F0FFBF' }]}>
+          <View style={styles.tagContainer}>
+            <TouchableOpacity style={[styles.tagButton, { borderColor: '#00F0FFBF' }]}>
               <Text style={styles.tagText}>#{item.category}</Text>
-          </TouchableOpacity>
-        </View>
+            </TouchableOpacity>
+          </View>
         )}
       </View>
     </TouchableOpacity>
@@ -399,9 +399,9 @@ export default function HeaderWithSearch({ navigation }) {
     <View key={`${post.communityId}-${post.type}-${post.id}`} style={styles.postContainer}>
       <View style={styles.postHeader}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Image 
-            source={post.authorImage ? { uri: post.authorImage } : require('./assets/a1.png')} 
-            style={styles.postProfileImage} 
+          <Image
+            source={post.authorImage ? { uri: post.authorImage } : require('./assets/a1.png')}
+            style={styles.postProfileImage}
           />
           <View style={{ marginLeft: 10 }}>
             <Text style={styles.postName}>{post.name}</Text>
@@ -413,15 +413,15 @@ export default function HeaderWithSearch({ navigation }) {
       {post.text && <Text style={styles.postText}>{post.text}</Text>}
 
       {post.images && post.images.length > 0 && (
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}>
-        {post.images.map((img, index) => (
-            <Image 
-              key={index} 
-              source={{ uri: img }} 
-              style={[styles.postImage, { width: (width - 60) / post.images.length }]} 
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}>
+          {post.images.map((img, index) => (
+            <Image
+              key={index}
+              source={{ uri: img }}
+              style={[styles.postImage, { width: (width - 60) / post.images.length }]}
             />
-        ))}
-      </View>
+          ))}
+        </View>
       )}
 
       <View style={styles.postFooter}>
@@ -613,7 +613,7 @@ const styles = StyleSheet.create({
   followButton: { backgroundColor: '#08FFE2', borderRadius: 15, paddingHorizontal: 10, paddingVertical: 5 },
   followText: { color: '#000', fontWeight: '700' },
   postText: { color: '#fff', fontSize: 14, marginBottom: 10 },
-  postImage: { height: 100, borderRadius: 10, resizeMode: 'cover' },
+  postImage: { height: 100, borderRadius: 10, resizeMode: 'contain' },
   postFooter: { flexDirection: 'row', alignItems: 'center' },
 });
 

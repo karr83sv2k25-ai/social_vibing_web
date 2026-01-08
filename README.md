@@ -1,3 +1,59 @@
+# Social Vibing - Web Application
+
+A modern, responsive social networking platform built with React Native Web, optimized for web deployment.
+
+## 🌟 Features
+
+- **Three-Column Desktop Layout** - Professional desktop experience with sidebars
+- **Fully Responsive** - Adapts seamlessly to mobile, tablet, and desktop
+- **Real-time Updates** - Firebase Firestore integration
+- **Rich Media** - Image/video posts, stories, live streaming
+- **Communities** - Create and join communities
+- **Messaging** - Direct messages and group chats
+- **Marketplace** - Buy and sell items
+- **User Profiles** - Customizable profiles with status system
+
+## 🚀 Quick Start
+
+### Installation
+```bash
+npm install
+```
+
+### Development
+```bash
+npm start
+# Opens at http://localhost:8081
+```
+
+### Build for Production
+```bash
+npm run build
+# Output in dist/ folder
+```
+
+### Deploy to Firebase
+```bash
+npm run deploy
+```
+
+## 📱 Responsive Design
+
+- **Desktop (≥1024px)**: Three-column layout with sidebars
+- **Tablet (768-1023px)**: Optimized layout
+- **Mobile (<768px)**: Single column with bottom nav
+
+## 📖 Documentation
+
+- [Web Deployment Guide](./WEB_DEPLOYMENT.md)
+- [Desktop Layout](./DESKTOP_LAYOUT_IMPLEMENTATION.md)
+- [Responsive Guide](./WEB_RESPONSIVE_IMPLEMENTATION.md)
+- [Testing Guide](./WEB_TESTING_GUIDE.md)
+
+---
+
+## Original Documentation Below
+
 # WhatsApp-Style Message Box Documentation
 
 Complete documentation for the production-ready message box implementation with persistent drafts, smart keyboard handling, and intelligent scroll behavior.

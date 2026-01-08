@@ -85,6 +85,22 @@ export const MessageBox = React.forwardRef(({
     onSend();
   };
 
+  // Handle keyboard events for web
+  const handleKeyPress = (e) => {
+    if (Platform.OS === 'web') {
+      // Check if Enter key is pressed without Shift
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault(); // Prevent default new line behavior
+
+        // Check if message is valid before attempting to send
+        if (value.trim() && !isLoading && !disabled && isOnline) {
+          handleSend(); // Send the message
+        }
+      }
+      // Shift+Enter will create a new line (default behavior)
+    }
+  };
+
   // Handle mic press
   const handleMicPressIn = () => {
     micPressTimer.current = setTimeout(() => {
@@ -115,10 +131,10 @@ export const MessageBox = React.forwardRef(({
       {/* Status Bar */}
       {statusMessage && (
         <View style={styles.statusBar}>
-          <Ionicons 
-            name={isBlocked ? 'ban' : 'cloud-offline'} 
-            size={16} 
-            color="#ef4444" 
+          <Ionicons
+            name={isBlocked ? 'ban' : 'cloud-offline'}
+            size={16}
+            color="#ef4444"
           />
           <Text style={styles.statusText}>{statusMessage}</Text>
         </View>
@@ -146,16 +162,16 @@ export const MessageBox = React.forwardRef(({
             style={styles.actionButton}
             disabled={disabled}
           >
-            <Ionicons 
-              name="add-circle-outline" 
-              size={24} 
-              color={disabled ? '#444' : '#999'} 
+            <Ionicons
+              name="add-circle-outline"
+              size={24}
+              color={disabled ? '#444' : '#999'}
             />
           </TouchableOpacity>
         </View>
 
         {/* Input Field - Wrap in Pressable to ensure emoji picker closes on tap */}
-        <Pressable 
+        <Pressable
           style={{ flex: 1 }}
           onPress={() => {
             // This will trigger focus which calls onFocus
@@ -167,6 +183,7 @@ export const MessageBox = React.forwardRef(({
             value={value}
             onChangeText={onChangeText}
             onFocus={onFocus}
+            onKeyPress={handleKeyPress}
             placeholder={placeholder}
             placeholderTextColor="#666"
             style={[
@@ -196,10 +213,10 @@ export const MessageBox = React.forwardRef(({
             {isLoading ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <Ionicons 
-                name="send" 
-                size={20} 
-                color={value.trim() && isOnline ? '#fff' : '#666'} 
+              <Ionicons
+                name="send"
+                size={20}
+                color={value.trim() && isOnline ? '#fff' : '#666'}
               />
             )}
           </TouchableOpacity>
@@ -210,10 +227,10 @@ export const MessageBox = React.forwardRef(({
             style={[styles.micButton, isRecording && styles.micButtonRecording]}
             disabled={disabled || !isOnline}
           >
-            <Ionicons 
-              name={isRecording ? 'stop-circle' : 'mic'} 
-              size={24} 
-              color={isRecording ? '#ef4444' : '#999'} 
+            <Ionicons
+              name={isRecording ? 'stop-circle' : 'mic'}
+              size={24}
+              color={isRecording ? '#ef4444' : '#999'}
             />
           </TouchableOpacity>
         )}

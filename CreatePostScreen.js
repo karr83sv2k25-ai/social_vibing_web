@@ -9,8 +9,16 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  isWeb,
+  isDesktopOrLarger,
+  getContainerWidth,
+  getResponsivePadding,
+  getResponsiveFontSize
+} from './utils/webResponsive';
 import * as ImagePicker from 'expo-image-picker';
 import { Video } from 'expo-av';
 import { getAuth } from 'firebase/auth';
@@ -30,7 +38,7 @@ export default function CreatePostScreen({ navigation }) {
 
   const pickImages = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    
+
     if (permissionResult.granted === false) {
       Alert.alert('Permission Required', 'Please allow access to your photo library');
       return;
@@ -58,7 +66,7 @@ export default function CreatePostScreen({ navigation }) {
 
   const pickVideos = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    
+
     if (permissionResult.granted === false) {
       Alert.alert('Permission Required', 'Please allow access to your photo library');
       return;
@@ -89,11 +97,11 @@ export default function CreatePostScreen({ navigation }) {
         timestamp: new Date().toISOString(),
         type: 'post',
       };
-      
+
       const existingDrafts = await AsyncStorage.getItem('post_drafts');
       const drafts = existingDrafts ? JSON.parse(existingDrafts) : [];
       drafts.push(draft);
-      
+
       await AsyncStorage.setItem('post_drafts', JSON.stringify(drafts));
       Alert.alert('Success', 'Post saved to drafts');
       navigation.goBack();
@@ -136,7 +144,7 @@ export default function CreatePostScreen({ navigation }) {
       console.log('📤 Uploading media to Hostinger...');
       const uploadedImageUrls = [];
       const uploadedVideoUrls = [];
-      
+
       for (const imageUri of selectedImages) {
         try {
           const uploadedUrl = await uploadImageToHostinger(imageUri, 'posts');
@@ -159,8 +167,8 @@ export default function CreatePostScreen({ navigation }) {
         }
       }
 
-      if ((selectedImages.length > 0 && uploadedImageUrls.length === 0) || 
-          (selectedVideos.length > 0 && uploadedVideoUrls.length === 0)) {
+      if ((selectedImages.length > 0 && uploadedImageUrls.length === 0) ||
+        (selectedVideos.length > 0 && uploadedVideoUrls.length === 0)) {
         Alert.alert('Upload Error', 'Failed to upload media. Please try again.');
         setIsPosting(false);
         return;
@@ -196,101 +204,106 @@ export default function CreatePostScreen({ navigation }) {
     }
   };
 
+  const useDesktopLayout = isWeb && isDesktopOrLarger();
+  const containerWidth = getContainerWidth();
+
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="close" size={28} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Create Post</Text>
-        <TouchableOpacity onPress={saveDraft}>
-          <Text style={styles.draftButton}>Draft</Text>
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView style={styles.content}>
-        {/* Text Input */}
-        <TextInput
-          style={styles.textInput}
-          placeholder="What's on your mind?"
-          placeholderTextColor="#666"
-          multiline
-          value={postText}
-          onChangeText={setPostText}
-          maxLength={5000}
-        />
-
-        {/* Image Preview */}
-        {selectedImages.length > 0 && (
-          <View style={styles.imagesContainer}>
-            {selectedImages.map((uri, index) => (
-              <View key={index} style={styles.imageWrapper}>
-                <Image source={{ uri }} style={styles.imagePreview} />
-                <TouchableOpacity
-                  style={styles.removeImageButton}
-                  onPress={() => removeImage(index)}
-                >
-                  <Ionicons name="close-circle" size={24} color="#fff" />
-                </TouchableOpacity>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* Video Preview */}
-        {selectedVideos.length > 0 && (
-          <View style={styles.imagesContainer}>
-            {selectedVideos.map((uri, index) => (
-              <View key={index} style={styles.imageWrapper}>
-                <Video
-                  source={{ uri }}
-                  style={styles.imagePreview}
-                  useNativeControls
-                  resizeMode="contain"
-                  isLooping
-                />
-                <TouchableOpacity
-                  style={styles.removeImageButton}
-                  onPress={() => removeVideo(index)}
-                >
-                  <Ionicons name="close-circle" size={24} color="#fff" />
-                </TouchableOpacity>
-                <View style={styles.videoIndicator}>
-                  <Ionicons name="play-circle" size={40} color="rgba(255,255,255,0.8)" />
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* Add Media Buttons */}
-        <View style={styles.mediaButtonsContainer}>
-          <TouchableOpacity style={styles.addMediaButton} onPress={pickImages}>
-            <Ionicons name="image" size={24} color="#08FFE2" />
-            <Text style={styles.addMediaText}>Add Photos</Text>
+      <View style={[styles.contentWrapper, useDesktopLayout && { maxWidth: 800, alignSelf: 'center', width: '100%' }]}>
+        {/* Header */}
+        <View style={[styles.header, useDesktopLayout && styles.headerDesktop]}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Ionicons name="close" size={28} color="#fff" />
           </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.addMediaButton} onPress={pickVideos}>
-            <Ionicons name="videocam" size={24} color="#ff4b6e" />
-            <Text style={styles.addMediaText}>Add Videos</Text>
+          <Text style={styles.headerTitle}>Create Post</Text>
+          <TouchableOpacity onPress={saveDraft}>
+            <Text style={styles.draftButton}>Draft</Text>
           </TouchableOpacity>
         </View>
-      </ScrollView>
 
-      {/* Footer - Publish Button */}
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={[styles.publishButton, isPosting && styles.publishButtonDisabled]}
-          onPress={publishPost}
-          disabled={isPosting}
-        >
-          {isPosting ? (
-            <ActivityIndicator color="#000" />
-          ) : (
-            <Text style={styles.publishButtonText}>Publish Post</Text>
+        <ScrollView style={styles.content}>
+          {/* Text Input */}
+          <TextInput
+            style={styles.textInput}
+            placeholder="What's on your mind?"
+            placeholderTextColor="#666"
+            multiline
+            value={postText}
+            onChangeText={setPostText}
+            maxLength={5000}
+          />
+
+          {/* Image Preview */}
+          {selectedImages.length > 0 && (
+            <View style={styles.imagesContainer}>
+              {selectedImages.map((uri, index) => (
+                <View key={index} style={styles.imageWrapper}>
+                  <Image source={{ uri }} style={styles.imagePreview} />
+                  <TouchableOpacity
+                    style={styles.removeImageButton}
+                    onPress={() => removeImage(index)}
+                  >
+                    <Ionicons name="close-circle" size={24} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
           )}
-        </TouchableOpacity>
+
+          {/* Video Preview */}
+          {selectedVideos.length > 0 && (
+            <View style={styles.imagesContainer}>
+              {selectedVideos.map((uri, index) => (
+                <View key={index} style={styles.imageWrapper}>
+                  <Video
+                    source={{ uri }}
+                    style={styles.imagePreview}
+                    useNativeControls
+                    resizeMode="contain"
+                    isLooping
+                  />
+                  <TouchableOpacity
+                    style={styles.removeImageButton}
+                    onPress={() => removeVideo(index)}
+                  >
+                    <Ionicons name="close-circle" size={24} color="#fff" />
+                  </TouchableOpacity>
+                  <View style={styles.videoIndicator}>
+                    <Ionicons name="play-circle" size={40} color="rgba(255,255,255,0.8)" />
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Add Media Buttons */}
+          <View style={styles.mediaButtonsContainer}>
+            <TouchableOpacity style={styles.addMediaButton} onPress={pickImages}>
+              <Ionicons name="image" size={24} color="#08FFE2" />
+              <Text style={styles.addMediaText}>Add Photos</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.addMediaButton} onPress={pickVideos}>
+              <Ionicons name="videocam" size={24} color="#ff4b6e" />
+              <Text style={styles.addMediaText}>Add Videos</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+
+        {/* Footer - Publish Button */}
+        <View style={styles.footer}>
+          <TouchableOpacity
+            style={[styles.publishButton, isPosting && styles.publishButtonDisabled]}
+            onPress={publishPost}
+            disabled={isPosting}
+          >
+            {isPosting ? (
+              <ActivityIndicator color="#000" />
+            ) : (
+              <Text style={styles.publishButtonText}>Publish Post</Text>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -300,6 +313,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
+  },
+  contentWrapper: {
+    flex: 1,
+    width: '100%',
+  },
+  headerDesktop: {
+    paddingTop: 20,
+    marginBottom: 10,
   },
   header: {
     flexDirection: 'row',
@@ -337,9 +358,9 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   imageWrapper: {
-    width: '48%',
+    width: isWeb && isDesktopOrLarger() ? '23%' : '48%',
     aspectRatio: 1,
-    marginRight: '4%',
+    marginRight: isWeb && isDesktopOrLarger() ? '2%' : '4%',
     marginBottom: 8,
     position: 'relative',
   },

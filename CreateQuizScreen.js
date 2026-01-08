@@ -8,8 +8,14 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  isWeb,
+  isDesktopOrLarger,
+  getContainerWidth,
+} from './utils/webResponsive';
 import { getAuth } from 'firebase/auth';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebaseConfig';
@@ -80,7 +86,7 @@ export default function CreateQuizScreen({ navigation }) {
         Alert.alert('Error', `Please enter text for question ${i + 1}`);
         return;
       }
-      
+
       const filledOptions = questions[i].options.filter(opt => opt.trim() !== '');
       if (filledOptions.length < 2) {
         Alert.alert('Error', `Question ${i + 1} needs at least 2 options`);
@@ -110,7 +116,7 @@ export default function CreateQuizScreen({ navigation }) {
       };
 
       await addDoc(collection(db, 'quizzes'), quizData);
-      
+
       Alert.alert('Success', 'Quiz created successfully!');
       navigation.goBack();
     } catch (error) {
@@ -121,106 +127,110 @@ export default function CreateQuizScreen({ navigation }) {
     }
   };
 
+  const useDesktopLayout = isWeb && isDesktopOrLarger();
+
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="close" size={28} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Create Quiz</Text>
-        <View style={{ width: 28 }} />
-      </View>
-
-      <ScrollView style={styles.content}>
-        {/* Quiz Title */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Quiz Title</Text>
-          <TextInput
-            style={styles.titleInput}
-            placeholder="Enter quiz title..."
-            placeholderTextColor="#666"
-            value={quizTitle}
-            onChangeText={setQuizTitle}
-            maxLength={100}
-          />
+      <View style={[styles.contentWrapper, useDesktopLayout && { maxWidth: 900, alignSelf: 'center', width: '100%' }]}>
+        {/* Header */}
+        <View style={[styles.header, useDesktopLayout && styles.headerDesktop]}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Ionicons name="close" size={28} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Create Quiz</Text>
+          <View style={{ width: 28 }} />
         </View>
 
-        {/* Questions */}
-        {questions.map((q, qIndex) => (
-          <View key={qIndex} style={styles.questionCard}>
-            <View style={styles.questionHeader}>
-              <Text style={styles.questionNumber}>Question {qIndex + 1}</Text>
-              {questions.length > 1 && (
-                <TouchableOpacity onPress={() => removeQuestion(qIndex)}>
-                  <Ionicons name="trash-outline" size={20} color="#FF4444" />
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* Question Text */}
+        <ScrollView style={styles.content}>
+          {/* Quiz Title */}
+          <View style={styles.section}>
+            <Text style={styles.label}>Quiz Title</Text>
             <TextInput
-              style={styles.questionInput}
-              placeholder="Enter your question..."
+              style={styles.titleInput}
+              placeholder="Enter quiz title..."
               placeholderTextColor="#666"
-              value={q.question}
-              onChangeText={(text) => updateQuestion(qIndex, 'question', text)}
-              maxLength={200}
-              multiline
+              value={quizTitle}
+              onChangeText={setQuizTitle}
+              maxLength={100}
             />
-
-            {/* Options */}
-            <Text style={styles.optionsLabel}>Options (tap to select correct answer)</Text>
-            {q.options.map((option, oIndex) => (
-              <View key={oIndex} style={styles.optionRow}>
-                <TouchableOpacity
-                  style={[
-                    styles.correctButton,
-                    q.correctAnswer === oIndex && styles.correctButtonActive,
-                  ]}
-                  onPress={() => selectCorrectAnswer(qIndex, oIndex)}
-                >
-                  <Ionicons
-                    name={q.correctAnswer === oIndex ? 'checkmark-circle' : 'ellipse-outline'}
-                    size={24}
-                    color={q.correctAnswer === oIndex ? '#00FF00' : '#666'}
-                  />
-                </TouchableOpacity>
-                <TextInput
-                  style={styles.optionInput}
-                  placeholder={`Option ${oIndex + 1}`}
-                  placeholderTextColor="#666"
-                  value={option}
-                  onChangeText={(text) => updateOption(qIndex, oIndex, text)}
-                  maxLength={100}
-                />
-              </View>
-            ))}
           </View>
-        ))}
 
-        {/* Add Question Button */}
-        {questions.length < 20 && (
-          <TouchableOpacity style={styles.addQuestionButton} onPress={addQuestion}>
-            <Ionicons name="add-circle-outline" size={24} color="#08FFE2" />
-            <Text style={styles.addQuestionText}>Add Question</Text>
-          </TouchableOpacity>
-        )}
-      </ScrollView>
+          {/* Questions */}
+          {questions.map((q, qIndex) => (
+            <View key={qIndex} style={styles.questionCard}>
+              <View style={styles.questionHeader}>
+                <Text style={styles.questionNumber}>Question {qIndex + 1}</Text>
+                {questions.length > 1 && (
+                  <TouchableOpacity onPress={() => removeQuestion(qIndex)}>
+                    <Ionicons name="trash-outline" size={20} color="#FF4444" />
+                  </TouchableOpacity>
+                )}
+              </View>
 
-      {/* Footer - Publish Button */}
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={[styles.publishButton, isPosting && styles.publishButtonDisabled]}
-          onPress={publishQuiz}
-          disabled={isPosting}
-        >
-          {isPosting ? (
-            <ActivityIndicator color="#000" />
-          ) : (
-            <Text style={styles.publishButtonText}>Publish Quiz</Text>
+              {/* Question Text */}
+              <TextInput
+                style={styles.questionInput}
+                placeholder="Enter your question..."
+                placeholderTextColor="#666"
+                value={q.question}
+                onChangeText={(text) => updateQuestion(qIndex, 'question', text)}
+                maxLength={200}
+                multiline
+              />
+
+              {/* Options */}
+              <Text style={styles.optionsLabel}>Options (tap to select correct answer)</Text>
+              {q.options.map((option, oIndex) => (
+                <View key={oIndex} style={styles.optionRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.correctButton,
+                      q.correctAnswer === oIndex && styles.correctButtonActive,
+                    ]}
+                    onPress={() => selectCorrectAnswer(qIndex, oIndex)}
+                  >
+                    <Ionicons
+                      name={q.correctAnswer === oIndex ? 'checkmark-circle' : 'ellipse-outline'}
+                      size={24}
+                      color={q.correctAnswer === oIndex ? '#00FF00' : '#666'}
+                    />
+                  </TouchableOpacity>
+                  <TextInput
+                    style={styles.optionInput}
+                    placeholder={`Option ${oIndex + 1}`}
+                    placeholderTextColor="#666"
+                    value={option}
+                    onChangeText={(text) => updateOption(qIndex, oIndex, text)}
+                    maxLength={100}
+                  />
+                </View>
+              ))}
+            </View>
+          ))}
+
+          {/* Add Question Button */}
+          {questions.length < 20 && (
+            <TouchableOpacity style={styles.addQuestionButton} onPress={addQuestion}>
+              <Ionicons name="add-circle-outline" size={24} color="#08FFE2" />
+              <Text style={styles.addQuestionText}>Add Question</Text>
+            </TouchableOpacity>
           )}
-        </TouchableOpacity>
+        </ScrollView>
+
+        {/* Footer - Publish Button */}
+        <View style={styles.footer}>
+          <TouchableOpacity
+            style={[styles.publishButton, isPosting && styles.publishButtonDisabled]}
+            onPress={publishQuiz}
+            disabled={isPosting}
+          >
+            {isPosting ? (
+              <ActivityIndicator color="#000" />
+            ) : (
+              <Text style={styles.publishButtonText}>Publish Quiz</Text>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -230,6 +240,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
+  },
+  contentWrapper: {
+    flex: 1,
+    width: '100%',
+  },
+  headerDesktop: {
+    paddingTop: 20,
+    marginBottom: 10,
   },
   header: {
     flexDirection: 'row',

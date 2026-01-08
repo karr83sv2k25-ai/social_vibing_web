@@ -2,9 +2,9 @@
   "expo": {
     "name": "Social Vibing",
     "slug": "social-vibing",
-    "owner": "karr83_sv",
+    "owner": "zainulabideen777",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "userInterfaceStyle": "light",
     "icon": "./assets/app-icon.png",
     "splash": {
@@ -15,33 +15,14 @@
     "assetBundlePatterns": [
       "**/*"
     ],
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.socialvibing.app",
-      "infoPlist": {
-        "NSCameraUsageDescription": "This app needs access to your camera to take photos for posts.",
-        "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select images for posts.",
-        "NSMicrophoneUsageDescription": "This app needs access to your microphone to record voice messages and for live voice chat.",
-        "ITSAppUsesNonExemptEncryption": false
-      }
-    },
-    "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/app-icon.png",
-        "backgroundColor": "#1a3a52"
-      },
-      "package": "com.socialvibing.app",
-      "permissions": [
-        "android.permission.CAMERA",
-        "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS",
-        "android.permission.BLUETOOTH",
-        "android.permission.BLUETOOTH_CONNECT"
-      ],
-      "softwareKeyboardLayoutMode": "pan"
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/app-icon.png",
+      "title": "Social Vibing - Connect, Share, Vibe",
+      "description": "A modern social networking platform for meaningful connections",
+      "themeColor": "#08FFE2",
+      "backgroundColor": "#000000",
+      "display": "standalone"
     },
     "extra": {
       "FIREBASE_API_KEY": "AIzaSyD8GUTKesMY2Hpv-D3JS0vUG3CnD6yhRgc",
@@ -50,44 +31,17 @@
       "FIREBASE_STORAGE_BUCKET": "social-vibing-karr.firebasestorage.app",
       "FIREBASE_MESSAGING_SENDER_ID": "907907966035",
       "FIREBASE_APP_ID": "1:907907966035:web:eca4797d3d76e6f00552a6",
-      "FIREBASE_MEASUREMENT_ID": "G-496NQLYE01",
-      "eas": {
-        "projectId": "06df50b7-56f1-4fb8-a7c3-2a3310dd68bb"
-      }
+      "FIREBASE_MEASUREMENT_ID": "G-496NQLYE01"
     },
     "plugins": [
-      "expo-dev-client",
       "expo-font",
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "ndkVersion": "26.1.10909125",
-            "enableProguardInReleaseBuilds": false,
-            "enableShrinkResourcesInReleaseBuilds": false,
-            "enableMinifyInReleaseBuilds": false
-          },
-          "ios": {
-            "deploymentTarget": "15.1",
-            "unstable_networkInspector": false
-          }
-        }
-      ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "The app accesses your photos to let you share them.",
-          "cameraPermission": "The app accesses your camera to let you take photos."
+          "photosPermission": "The app accesses your photos to let you share them."
         }
       ],
-      [
-        "expo-av",
-        {
-          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone to record voice messages and for live voice chat."
-        }
-      ],
-      "expo-web-browser",
-      "expo-video"
+      "expo-web-browser"
     ]
   }
 }

@@ -12,6 +12,66 @@ service cloud.firestore {
       return request.auth.uid == userId;
     }
     
+    // ========== MARKETPLACE COLLECTIONS ==========
+    
+    // Wallets - users can only read/write their own
+    match /wallets/{userId} {
+      allow read, write: if isSignedIn() && isOwner(userId);
+    }
+    
+    // Products - anyone can read, authenticated users can create
+    match /products/{productId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && 
+        (resource.data.sellerId == request.auth.uid);
+    }
+    
+    // Transactions - users can only read their own
+    match /transactions/{transactionId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+    }
+    
+    // Daily Rewards - users can only access their own
+    match /dailyRewards/{rewardId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+    }
+    
+    // Ad Rewards - users can only access their own
+    match /adRewards/{rewardId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+    }
+    
+    // Withdrawals - users can only access their own
+    match /withdrawals/{withdrawalId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+    
+    // Orders - buyers and sellers can access
+    match /orders/{orderId} {
+      allow read: if isSignedIn() && 
+        (resource.data.buyerId == request.auth.uid || 
+         resource.data.sellerId == request.auth.uid);
+      allow create: if isSignedIn() && request.resource.data.buyerId == request.auth.uid;
+      allow update: if isSignedIn() && 
+        (resource.data.buyerId == request.auth.uid || 
+         resource.data.sellerId == request.auth.uid);
+    }
+    
+    // Reviews - anyone can read, authenticated users can create their own
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+    
+    // ========== END MARKETPLACE COLLECTIONS ==========
+    
     // Audio calls collection
     match /audio_calls/{communityId}/rooms/{roomId} {
       // Allow authenticated users to create and read audio rooms
@@ -469,9 +529,5 @@ service cloud.firestore {
       }
     }
     
-    // Default rule - deny all access to other collections
-    match /{document=**} {
-      allow read, write: if false;
-    }
   }
 }

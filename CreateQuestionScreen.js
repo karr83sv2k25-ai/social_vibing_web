@@ -9,8 +9,14 @@ import {
   Alert,
   ActivityIndicator,
   Image,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  isWeb,
+  isDesktopOrLarger,
+  getContainerWidth,
+} from './utils/webResponsive';
 import * as ImagePicker from 'expo-image-picker';
 import { getAuth } from 'firebase/auth';
 import { compressPostImage } from './utils/imageCompression';
@@ -43,7 +49,7 @@ export default function CreateQuestionScreen({ navigation }) {
 
   const pickImage = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    
+
     if (permissionResult.granted === false) {
       Alert.alert('Permission Required', 'Please allow access to your photo library');
       return;
@@ -90,7 +96,7 @@ export default function CreateQuestionScreen({ navigation }) {
       };
 
       await addDoc(collection(db, 'questions'), questionData);
-      
+
       Alert.alert('Success', 'Question posted successfully!');
       navigation.goBack();
     } catch (error) {
@@ -101,141 +107,145 @@ export default function CreateQuestionScreen({ navigation }) {
     }
   };
 
+  const useDesktopLayout = isWeb && isDesktopOrLarger();
+
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="close" size={28} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Ask Question</Text>
-        <View style={{ width: 28 }} />
-      </View>
-
-      <ScrollView style={styles.content}>
-        {/* Question Input */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Your Question</Text>
-          <TextInput
-            style={styles.questionInput}
-            placeholder="What do you want to know?"
-            placeholderTextColor="#666"
-            value={question}
-            onChangeText={setQuestion}
-            maxLength={300}
-            multiline
-          />
-          <Text style={styles.charCount}>{question.length}/300</Text>
-        </View>
-
-        {/* Description Input */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Description (Optional)</Text>
-          <TextInput
-            style={styles.descriptionInput}
-            placeholder="Add more details to help others understand your question..."
-            placeholderTextColor="#666"
-            value={description}
-            onChangeText={setDescription}
-            maxLength={1000}
-            multiline
-          />
-          <Text style={styles.charCount}>{description.length}/1000</Text>
-        </View>
-
-        {/* Category Selection */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Category</Text>
-          <TouchableOpacity
-            style={styles.categorySelector}
-            onPress={() => setShowCategories(!showCategories)}
-          >
-            <Text style={styles.categoryText}>{category}</Text>
-            <Ionicons
-              name={showCategories ? 'chevron-up' : 'chevron-down'}
-              size={20}
-              color="#08FFE2"
-            />
+      <View style={[styles.contentWrapper, useDesktopLayout && { maxWidth: 800, alignSelf: 'center', width: '100%' }]}>
+        {/* Header */}
+        <View style={[styles.header, useDesktopLayout && styles.headerDesktop]}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Ionicons name="close" size={28} color="#fff" />
           </TouchableOpacity>
-
-          {showCategories && (
-            <View style={styles.categoryList}>
-              {CATEGORIES.map((cat) => (
-                <TouchableOpacity
-                  key={cat}
-                  style={[
-                    styles.categoryItem,
-                    category === cat && styles.categoryItemActive,
-                  ]}
-                  onPress={() => {
-                    setCategory(cat);
-                    setShowCategories(false);
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.categoryItemText,
-                      category === cat && styles.categoryItemTextActive,
-                    ]}
-                  >
-                    {cat}
-                  </Text>
-                  {category === cat && (
-                    <Ionicons name="checkmark" size={20} color="#08FFE2" />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
+          <Text style={styles.headerTitle}>Ask Question</Text>
+          <View style={{ width: 28 }} />
         </View>
 
-        {/* Image Attachment */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Add Image (Optional)</Text>
-          {selectedImage ? (
-            <View style={styles.imageContainer}>
-              <Image source={{ uri: selectedImage }} style={styles.imagePreview} />
-              <TouchableOpacity
-                style={styles.removeImageButton}
-                onPress={() => setSelectedImage(null)}
-              >
-                <Ionicons name="close-circle" size={32} color="#fff" />
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <TouchableOpacity style={styles.addImageButton} onPress={pickImage}>
-              <Ionicons name="image-outline" size={32} color="#08FFE2" />
-              <Text style={styles.addImageText}>Add Image</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Tips */}
-        <View style={styles.tipsContainer}>
-          <View style={styles.tipHeader}>
-            <Ionicons name="bulb-outline" size={20} color="#FFD700" />
-            <Text style={styles.tipHeaderText}>Tips for asking questions</Text>
+        <ScrollView style={styles.content}>
+          {/* Question Input */}
+          <View style={styles.section}>
+            <Text style={styles.label}>Your Question</Text>
+            <TextInput
+              style={styles.questionInput}
+              placeholder="What do you want to know?"
+              placeholderTextColor="#666"
+              value={question}
+              onChangeText={setQuestion}
+              maxLength={300}
+              multiline
+            />
+            <Text style={styles.charCount}>{question.length}/300</Text>
           </View>
-          <Text style={styles.tipText}>• Be clear and specific</Text>
-          <Text style={styles.tipText}>• Include relevant details</Text>
-          <Text style={styles.tipText}>• Choose the right category</Text>
-          <Text style={styles.tipText}>• Be respectful and polite</Text>
-        </View>
-      </ScrollView>
 
-      {/* Footer - Publish Button */}
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={[styles.publishButton, isPosting && styles.publishButtonDisabled]}
-          onPress={publishQuestion}
-          disabled={isPosting}
-        >
-          {isPosting ? (
-            <ActivityIndicator color="#000" />
-          ) : (
-            <Text style={styles.publishButtonText}>Post Question</Text>
-          )}
-        </TouchableOpacity>
+          {/* Description Input */}
+          <View style={styles.section}>
+            <Text style={styles.label}>Description (Optional)</Text>
+            <TextInput
+              style={styles.descriptionInput}
+              placeholder="Add more details to help others understand your question..."
+              placeholderTextColor="#666"
+              value={description}
+              onChangeText={setDescription}
+              maxLength={1000}
+              multiline
+            />
+            <Text style={styles.charCount}>{description.length}/1000</Text>
+          </View>
+
+          {/* Category Selection */}
+          <View style={styles.section}>
+            <Text style={styles.label}>Category</Text>
+            <TouchableOpacity
+              style={styles.categorySelector}
+              onPress={() => setShowCategories(!showCategories)}
+            >
+              <Text style={styles.categoryText}>{category}</Text>
+              <Ionicons
+                name={showCategories ? 'chevron-up' : 'chevron-down'}
+                size={20}
+                color="#08FFE2"
+              />
+            </TouchableOpacity>
+
+            {showCategories && (
+              <View style={styles.categoryList}>
+                {CATEGORIES.map((cat) => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[
+                      styles.categoryItem,
+                      category === cat && styles.categoryItemActive,
+                    ]}
+                    onPress={() => {
+                      setCategory(cat);
+                      setShowCategories(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.categoryItemText,
+                        category === cat && styles.categoryItemTextActive,
+                      ]}
+                    >
+                      {cat}
+                    </Text>
+                    {category === cat && (
+                      <Ionicons name="checkmark" size={20} color="#08FFE2" />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+
+          {/* Image Attachment */}
+          <View style={styles.section}>
+            <Text style={styles.label}>Add Image (Optional)</Text>
+            {selectedImage ? (
+              <View style={styles.imageContainer}>
+                <Image source={{ uri: selectedImage }} style={styles.imagePreview} />
+                <TouchableOpacity
+                  style={styles.removeImageButton}
+                  onPress={() => setSelectedImage(null)}
+                >
+                  <Ionicons name="close-circle" size={32} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity style={styles.addImageButton} onPress={pickImage}>
+                <Ionicons name="image-outline" size={32} color="#08FFE2" />
+                <Text style={styles.addImageText}>Add Image</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Tips */}
+          <View style={styles.tipsContainer}>
+            <View style={styles.tipHeader}>
+              <Ionicons name="bulb-outline" size={20} color="#FFD700" />
+              <Text style={styles.tipHeaderText}>Tips for asking questions</Text>
+            </View>
+            <Text style={styles.tipText}>• Be clear and specific</Text>
+            <Text style={styles.tipText}>• Include relevant details</Text>
+            <Text style={styles.tipText}>• Choose the right category</Text>
+            <Text style={styles.tipText}>• Be respectful and polite</Text>
+          </View>
+        </ScrollView>
+
+        {/* Footer - Publish Button */}
+        <View style={styles.footer}>
+          <TouchableOpacity
+            style={[styles.publishButton, isPosting && styles.publishButtonDisabled]}
+            onPress={publishQuestion}
+            disabled={isPosting}
+          >
+            {isPosting ? (
+              <ActivityIndicator color="#000" />
+            ) : (
+              <Text style={styles.publishButtonText}>Post Question</Text>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -245,6 +255,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
+  },
+  contentWrapper: {
+    flex: 1,
+    width: '100%',
+  },
+  headerDesktop: {
+    paddingTop: 20,
+    marginBottom: 10,
   },
   header: {
     flexDirection: 'row',

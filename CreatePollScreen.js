@@ -8,8 +8,14 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  isWeb,
+  isDesktopOrLarger,
+  getContainerWidth,
+} from './utils/webResponsive';
 import { getAuth } from 'firebase/auth';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebaseConfig';
@@ -79,7 +85,7 @@ export default function CreatePollScreen({ navigation }) {
       };
 
       await addDoc(collection(db, 'polls'), pollData);
-      
+
       Alert.alert('Success', 'Poll created successfully!');
       navigation.goBack();
     } catch (error) {
@@ -90,112 +96,116 @@ export default function CreatePollScreen({ navigation }) {
     }
   };
 
+  const useDesktopLayout = isWeb && isDesktopOrLarger();
+
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="close" size={28} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Create Poll</Text>
-        <View style={{ width: 28 }} />
-      </View>
-
-      <ScrollView style={styles.content}>
-        {/* Question Input */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Question</Text>
-          <TextInput
-            style={styles.questionInput}
-            placeholder="Ask a question..."
-            placeholderTextColor="#666"
-            value={question}
-            onChangeText={setQuestion}
-            maxLength={200}
-            multiline
-          />
+      <View style={[styles.contentWrapper, useDesktopLayout && { maxWidth: 800, alignSelf: 'center', width: '100%' }]}>
+        {/* Header */}
+        <View style={[styles.header, useDesktopLayout && styles.headerDesktop]}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Ionicons name="close" size={28} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Create Poll</Text>
+          <View style={{ width: 28 }} />
         </View>
 
-        {/* Options */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Options</Text>
-          {options.map((option, index) => (
-            <View key={index} style={styles.optionContainer}>
-              <View style={styles.optionNumber}>
-                <Text style={styles.optionNumberText}>{index + 1}</Text>
+        <ScrollView style={styles.content}>
+          {/* Question Input */}
+          <View style={styles.section}>
+            <Text style={styles.label}>Question</Text>
+            <TextInput
+              style={styles.questionInput}
+              placeholder="Ask a question..."
+              placeholderTextColor="#666"
+              value={question}
+              onChangeText={setQuestion}
+              maxLength={200}
+              multiline
+            />
+          </View>
+
+          {/* Options */}
+          <View style={styles.section}>
+            <Text style={styles.label}>Options</Text>
+            {options.map((option, index) => (
+              <View key={index} style={styles.optionContainer}>
+                <View style={styles.optionNumber}>
+                  <Text style={styles.optionNumberText}>{index + 1}</Text>
+                </View>
+                <TextInput
+                  style={styles.optionInput}
+                  placeholder={`Option ${index + 1}`}
+                  placeholderTextColor="#666"
+                  value={option}
+                  onChangeText={(text) => updateOption(index, text)}
+                  maxLength={100}
+                />
+                {options.length > 2 && (
+                  <TouchableOpacity
+                    onPress={() => removeOption(index)}
+                    style={styles.removeOptionButton}
+                  >
+                    <Ionicons name="close-circle" size={24} color="#FF4444" />
+                  </TouchableOpacity>
+                )}
               </View>
-              <TextInput
-                style={styles.optionInput}
-                placeholder={`Option ${index + 1}`}
-                placeholderTextColor="#666"
-                value={option}
-                onChangeText={(text) => updateOption(index, text)}
-                maxLength={100}
-              />
-              {options.length > 2 && (
-                <TouchableOpacity
-                  onPress={() => removeOption(index)}
-                  style={styles.removeOptionButton}
-                >
-                  <Ionicons name="close-circle" size={24} color="#FF4444" />
-                </TouchableOpacity>
-              )}
-            </View>
-          ))}
+            ))}
 
-          {/* Add Option Button */}
-          {options.length < 10 && (
-            <TouchableOpacity style={styles.addOptionButton} onPress={addOption}>
-              <Ionicons name="add-circle-outline" size={24} color="#08FFE2" />
-              <Text style={styles.addOptionText}>Add Option</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+            {/* Add Option Button */}
+            {options.length < 10 && (
+              <TouchableOpacity style={styles.addOptionButton} onPress={addOption}>
+                <Ionicons name="add-circle-outline" size={24} color="#08FFE2" />
+                <Text style={styles.addOptionText}>Add Option</Text>
+              </TouchableOpacity>
+            )}
+          </View>
 
-        {/* Settings */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Settings</Text>
-          
-          <TouchableOpacity
-            style={styles.settingRow}
-            onPress={() => setAllowMultipleAnswers(!allowMultipleAnswers)}
-          >
-            <View>
-              <Text style={styles.settingTitle}>Allow multiple answers</Text>
-              <Text style={styles.settingDescription}>
-                Let people choose more than one option
-              </Text>
-            </View>
-            <View
-              style={[
-                styles.switch,
-                allowMultipleAnswers && styles.switchActive,
-              ]}
+          {/* Settings */}
+          <View style={styles.section}>
+            <Text style={styles.label}>Settings</Text>
+
+            <TouchableOpacity
+              style={styles.settingRow}
+              onPress={() => setAllowMultipleAnswers(!allowMultipleAnswers)}
             >
+              <View>
+                <Text style={styles.settingTitle}>Allow multiple answers</Text>
+                <Text style={styles.settingDescription}>
+                  Let people choose more than one option
+                </Text>
+              </View>
               <View
                 style={[
-                  styles.switchThumb,
-                  allowMultipleAnswers && styles.switchThumbActive,
+                  styles.switch,
+                  allowMultipleAnswers && styles.switchActive,
                 ]}
-              />
-            </View>
+              >
+                <View
+                  style={[
+                    styles.switchThumb,
+                    allowMultipleAnswers && styles.switchThumbActive,
+                  ]}
+                />
+              </View>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+
+        {/* Footer - Publish Button */}
+        <View style={styles.footer}>
+          <TouchableOpacity
+            style={[styles.publishButton, isPosting && styles.publishButtonDisabled]}
+            onPress={publishPoll}
+            disabled={isPosting}
+          >
+            {isPosting ? (
+              <ActivityIndicator color="#000" />
+            ) : (
+              <Text style={styles.publishButtonText}>Create Poll</Text>
+            )}
           </TouchableOpacity>
         </View>
-      </ScrollView>
-
-      {/* Footer - Publish Button */}
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={[styles.publishButton, isPosting && styles.publishButtonDisabled]}
-          onPress={publishPoll}
-          disabled={isPosting}
-        >
-          {isPosting ? (
-            <ActivityIndicator color="#000" />
-          ) : (
-            <Text style={styles.publishButtonText}>Create Poll</Text>
-          )}
-        </TouchableOpacity>
       </View>
     </View>
   );
@@ -205,6 +215,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
+  },
+  contentWrapper: {
+    flex: 1,
+    width: '100%',
+  },
+  headerDesktop: {
+    paddingTop: 20,
+    marginBottom: 10,
   },
   header: {
     flexDirection: 'row',
