@@ -12,19 +12,20 @@ import {
   Switch,
   ActivityIndicator,
   TextInput,
-  Modal
+  Modal,
+  Platform
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../firebaseConfig';
-import { 
-  addGroupMembers, 
-  removeGroupMember, 
+import {
+  addGroupMembers,
+  removeGroupMember,
   leaveGroup,
   promoteToAdmin,
   demoteAdmin,
-  updateGroupInfo 
+  updateGroupInfo
 } from '../utils/groupChatHelpers';
 import { uploadImageToHostinger } from '../hostingerConfig';
 
@@ -39,7 +40,7 @@ const DANGER = '#EF4444';
 export default function GroupInfoScreen({ route, navigation }) {
   const { conversationId } = route.params;
   const currentUserId = auth.currentUser?.uid;
-  
+
   const [groupData, setGroupData] = useState(null);
   const [participants, setParticipants] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -49,15 +50,15 @@ export default function GroupInfoScreen({ route, navigation }) {
   const [tempName, setTempName] = useState('');
   const [tempDescription, setTempDescription] = useState('');
   const [showExitModal, setShowExitModal] = useState(false);
-  
+
   // User settings
   const [muteNotifications, setMuteNotifications] = useState(false);
   const [customNotifications, setCustomNotifications] = useState('all');
   const [isArchived, setIsArchived] = useState(false);
-  
+
   useEffect(() => {
     if (!conversationId) return;
-    
+
     // Subscribe to group data
     const unsubscribe = onSnapshot(
       doc(db, 'conversations', conversationId),
@@ -68,13 +69,13 @@ export default function GroupInfoScreen({ route, navigation }) {
           setIsAdmin(data.admins?.includes(currentUserId));
           setTempName(data.groupName || '');
           setTempDescription(data.groupDescription || '');
-          
+
           // Load user settings
           const userSettings = data.userSettings?.[currentUserId] || {};
           setMuteNotifications(userSettings.muted || false);
           setCustomNotifications(userSettings.customNotifications || 'all');
           setIsArchived(userSettings.archived || false);
-          
+
           // Load participant details
           if (data.participants) {
             const participantDetails = await Promise.all(
@@ -89,7 +90,7 @@ export default function GroupInfoScreen({ route, navigation }) {
             );
             setParticipants(participantDetails);
           }
-          
+
           setLoading(false);
         }
       },
@@ -98,23 +99,23 @@ export default function GroupInfoScreen({ route, navigation }) {
         setLoading(false);
       }
     );
-    
+
     return () => unsubscribe();
   }, [conversationId, currentUserId]);
-  
+
   const handleChangeGroupIcon = async () => {
     if (!isAdmin) {
       Alert.alert('Permission Denied', 'Only admins can change the group icon');
       return;
     }
-    
+
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.7,
     });
-    
+
     if (!result.canceled) {
       try {
         const iconUrl = await uploadImageToHostinger(result.assets[0].uri, 'group_icons');
@@ -125,13 +126,13 @@ export default function GroupInfoScreen({ route, navigation }) {
       }
     }
   };
-  
+
   const handleSaveName = async () => {
     if (!tempName.trim()) {
       Alert.alert('Error', 'Group name cannot be empty');
       return;
     }
-    
+
     try {
       await updateGroupInfo(conversationId, { groupName: tempName });
       setEditingName(false);
@@ -140,7 +141,7 @@ export default function GroupInfoScreen({ route, navigation }) {
       Alert.alert('Error', 'Failed to update group name');
     }
   };
-  
+
   const handleSaveDescription = async () => {
     try {
       await updateGroupInfo(conversationId, { groupDescription: tempDescription });
@@ -150,7 +151,7 @@ export default function GroupInfoScreen({ route, navigation }) {
       Alert.alert('Error', 'Failed to update description');
     }
   };
-  
+
   const handleToggleMute = async (value) => {
     try {
       await updateDoc(doc(db, 'conversations', conversationId), {
@@ -162,7 +163,7 @@ export default function GroupInfoScreen({ route, navigation }) {
       Alert.alert('Error', 'Failed to update notification settings');
     }
   };
-  
+
   const handleToggleArchive = async (value) => {
     try {
       await updateDoc(doc(db, 'conversations', conversationId), {
@@ -176,7 +177,7 @@ export default function GroupInfoScreen({ route, navigation }) {
       Alert.alert('Error', 'Failed to archive chat');
     }
   };
-  
+
   const handlePromoteMember = (userId, userName) => {
     Alert.alert(
       'Promote to Admin',
@@ -197,7 +198,7 @@ export default function GroupInfoScreen({ route, navigation }) {
       ]
     );
   };
-  
+
   const handleDemoteMember = (userId, userName) => {
     Alert.alert(
       'Remove Admin',
@@ -219,7 +220,7 @@ export default function GroupInfoScreen({ route, navigation }) {
       ]
     );
   };
-  
+
   const handleRemoveMember = (userId, userName) => {
     Alert.alert(
       'Remove Member',
@@ -241,11 +242,11 @@ export default function GroupInfoScreen({ route, navigation }) {
       ]
     );
   };
-  
+
   const handleExitGroup = () => {
     setShowExitModal(true);
   };
-  
+
   const confirmExitGroup = async () => {
     try {
       await leaveGroup(conversationId, currentUserId);
@@ -256,7 +257,7 @@ export default function GroupInfoScreen({ route, navigation }) {
       Alert.alert('Error', 'Failed to leave group');
     }
   };
-  
+
   const handleAddMembers = () => {
     navigation.navigate('AddGroupMembers', { conversationId });
   };
@@ -305,9 +306,9 @@ export default function GroupInfoScreen({ route, navigation }) {
       Alert.alert('Exporting...', 'Please wait while we prepare your chat export');
       const { exportChatHistory } = await import('../utils/userControls');
       const { Share } = await import('react-native');
-      
+
       const chatText = await exportChatHistory(conversationId, groupData?.groupName || 'Group Chat');
-      
+
       await Share.share({
         message: chatText,
         title: `${groupData?.groupName || 'Group'} Chat Export`
@@ -317,7 +318,7 @@ export default function GroupInfoScreen({ route, navigation }) {
       Alert.alert('Error', 'Failed to export chat');
     }
   };
-  
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -325,7 +326,7 @@ export default function GroupInfoScreen({ route, navigation }) {
       </View>
     );
   }
-  
+
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -336,12 +337,12 @@ export default function GroupInfoScreen({ route, navigation }) {
         <Text style={styles.headerTitle}>Group Info</Text>
         <View style={{ width: 24 }} />
       </View>
-      
-      <ScrollView style={styles.scrollView}>
-        
+
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+
         {/* ========== GROUP 1: BASIC INFO ========== */}
         <View style={styles.section}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.groupIconContainer}
             onPress={handleChangeGroupIcon}
             disabled={!isAdmin}
@@ -359,7 +360,7 @@ export default function GroupInfoScreen({ route, navigation }) {
               </View>
             )}
           </TouchableOpacity>
-          
+
           {/* Group Name */}
           <View style={styles.infoRow}>
             <View style={styles.infoLabel}>
@@ -385,7 +386,7 @@ export default function GroupInfoScreen({ route, navigation }) {
                 </View>
               </View>
             ) : (
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.infoValue}
                 onPress={() => isAdmin && setEditingName(true)}
                 disabled={!isAdmin}
@@ -395,7 +396,7 @@ export default function GroupInfoScreen({ route, navigation }) {
               </TouchableOpacity>
             )}
           </View>
-          
+
           {/* Group Description */}
           <View style={styles.infoRow}>
             <View style={styles.infoLabel}>
@@ -422,7 +423,7 @@ export default function GroupInfoScreen({ route, navigation }) {
                 </View>
               </View>
             ) : (
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.infoValue}
                 onPress={() => isAdmin && setEditingDescription(true)}
                 disabled={!isAdmin}
@@ -434,14 +435,14 @@ export default function GroupInfoScreen({ route, navigation }) {
               </TouchableOpacity>
             )}
           </View>
-          
+
           <Text style={styles.sectionSubtext}>
             Created on {groupData?.createdAt?.toDate().toLocaleDateString()}
           </Text>
         </View>
-        
+
         <View style={styles.divider} />
-        
+
         {/* ========== GROUP 2: MEMBERS ========== */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -454,14 +455,14 @@ export default function GroupInfoScreen({ route, navigation }) {
               </TouchableOpacity>
             )}
           </View>
-          
+
           {participants.map((participant) => (
             <TouchableOpacity
               key={participant.id}
               style={styles.memberItem}
               onLongPress={() => {
                 if (!isAdmin || participant.id === currentUserId) return;
-                
+
                 Alert.alert(
                   participant.displayName || participant.username || 'User',
                   'Choose an action',
@@ -469,19 +470,19 @@ export default function GroupInfoScreen({ route, navigation }) {
                     { text: 'Cancel', style: 'cancel' },
                     participant.isAdmin
                       ? {
-                          text: 'Remove Admin',
-                          onPress: () => handleDemoteMember(
-                            participant.id,
-                            participant.displayName || participant.username
-                          )
-                        }
+                        text: 'Remove Admin',
+                        onPress: () => handleDemoteMember(
+                          participant.id,
+                          participant.displayName || participant.username
+                        )
+                      }
                       : {
-                          text: 'Make Admin',
-                          onPress: () => handlePromoteMember(
-                            participant.id,
-                            participant.displayName || participant.username
-                          )
-                        },
+                        text: 'Make Admin',
+                        onPress: () => handlePromoteMember(
+                          participant.id,
+                          participant.displayName || participant.username
+                        )
+                      },
                     {
                       text: 'Remove from Group',
                       style: 'destructive',
@@ -513,19 +514,19 @@ export default function GroupInfoScreen({ route, navigation }) {
             </TouchableOpacity>
           ))}
         </View>
-        
+
         <View style={styles.divider} />
-        
+
         {/* ========== GROUP 3: NOTIFICATION SETTINGS ========== */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Notifications</Text>
-          
+
           <View style={styles.settingRow}>
             <View style={styles.settingLabel}>
-              <Ionicons 
-                name={muteNotifications ? "notifications-off" : "notifications"} 
-                size={22} 
-                color={muteNotifications ? DANGER : TEXT_DIM} 
+              <Ionicons
+                name={muteNotifications ? "notifications-off" : "notifications"}
+                size={22}
+                color={muteNotifications ? DANGER : TEXT_DIM}
               />
               <Text style={styles.settingText}>Mute Notifications</Text>
             </View>
@@ -536,7 +537,7 @@ export default function GroupInfoScreen({ route, navigation }) {
               thumbColor={muteNotifications ? CYAN : '#f4f3f4'}
             />
           </View>
-          
+
           <TouchableOpacity style={styles.settingRow} onPress={handleCustomNotificationsPress}>
             <View style={styles.settingLabel}>
               <MaterialCommunityIcons name="bell-badge" size={22} color={TEXT_DIM} />
@@ -544,20 +545,20 @@ export default function GroupInfoScreen({ route, navigation }) {
             </View>
             <View style={styles.settingValue}>
               <Text style={styles.settingValueText}>
-                {customNotifications === 'all' ? 'All Messages' : 
-                 customNotifications === 'mentions' ? 'Mentions Only' : 'Off'}
+                {customNotifications === 'all' ? 'All Messages' :
+                  customNotifications === 'mentions' ? 'Mentions Only' : 'Off'}
               </Text>
               <Ionicons name="chevron-forward" size={18} color={TEXT_DIM} />
             </View>
           </TouchableOpacity>
         </View>
-        
+
         <View style={styles.divider} />
-        
+
         {/* ========== GROUP 4: MEDIA & CHAT MANAGEMENT ========== */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Media & Storage</Text>
-          
+
           <TouchableOpacity style={styles.settingRow} onPress={handleMediaPress}>
             <View style={styles.settingLabel}>
               <Ionicons name="images" size={22} color={TEXT_DIM} />
@@ -568,7 +569,7 @@ export default function GroupInfoScreen({ route, navigation }) {
               <Ionicons name="chevron-forward" size={18} color={TEXT_DIM} />
             </View>
           </TouchableOpacity>
-          
+
           <TouchableOpacity style={styles.settingRow} onPress={handleStarredPress}>
             <View style={styles.settingLabel}>
               <Ionicons name="star" size={22} color={TEXT_DIM} />
@@ -576,7 +577,7 @@ export default function GroupInfoScreen({ route, navigation }) {
             </View>
             <Ionicons name="chevron-forward" size={18} color={TEXT_DIM} />
           </TouchableOpacity>
-          
+
           <TouchableOpacity style={styles.settingRow} onPress={handleSearchPress}>
             <View style={styles.settingLabel}>
               <Ionicons name="search" size={22} color={TEXT_DIM} />
@@ -585,13 +586,13 @@ export default function GroupInfoScreen({ route, navigation }) {
             <Ionicons name="chevron-forward" size={18} color={TEXT_DIM} />
           </TouchableOpacity>
         </View>
-        
+
         <View style={styles.divider} />
-        
+
         {/* ========== GROUP 5: PRIVACY & ACTIONS ========== */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Actions</Text>
-          
+
           <View style={styles.settingRow}>
             <View style={styles.settingLabel}>
               <Ionicons name="archive" size={22} color={TEXT_DIM} />
@@ -604,7 +605,7 @@ export default function GroupInfoScreen({ route, navigation }) {
               thumbColor={isArchived ? CYAN : '#f4f3f4'}
             />
           </View>
-          
+
           <TouchableOpacity style={styles.settingRow} onPress={handleClearChat}>
             <View style={styles.settingLabel}>
               <MaterialCommunityIcons name="broom" size={22} color={TEXT_DIM} />
@@ -612,7 +613,7 @@ export default function GroupInfoScreen({ route, navigation }) {
             </View>
             <Ionicons name="chevron-forward" size={18} color={TEXT_DIM} />
           </TouchableOpacity>
-          
+
           <TouchableOpacity style={styles.settingRow} onPress={handleExportChat}>
             <View style={styles.settingLabel}>
               <Ionicons name="download-outline" size={22} color={TEXT_DIM} />
@@ -621,28 +622,28 @@ export default function GroupInfoScreen({ route, navigation }) {
             <Ionicons name="chevron-forward" size={18} color={TEXT_DIM} />
           </TouchableOpacity>
         </View>
-        
+
         <View style={styles.divider} />
-        
+
         {/* ========== GROUP 6: DANGER ZONE ========== */}
         <View style={styles.section}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.dangerButton}
             onPress={handleExitGroup}
           >
             <Ionicons name="exit-outline" size={22} color={DANGER} />
             <Text style={styles.dangerText}>Exit Group</Text>
           </TouchableOpacity>
-          
+
           <TouchableOpacity style={styles.dangerButton}>
             <Ionicons name="flag" size={22} color={DANGER} />
             <Text style={styles.dangerText}>Report Group</Text>
           </TouchableOpacity>
         </View>
-        
+
         <View style={{ height: 40 }} />
       </ScrollView>
-      
+
       {/* Exit Group Confirmation Modal */}
       <Modal
         visible={showExitModal}
@@ -657,16 +658,16 @@ export default function GroupInfoScreen({ route, navigation }) {
             <Text style={styles.modalText}>
               You will no longer receive messages from this group
             </Text>
-            
+
             <View style={styles.modalButtons}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton]}
                 onPress={() => setShowExitModal(false)}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
-              
-              <TouchableOpacity 
+
+              <TouchableOpacity
                 style={[styles.modalButton, styles.confirmButton]}
                 onPress={confirmExitGroup}
               >
@@ -683,7 +684,8 @@ export default function GroupInfoScreen({ route, navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: BG
+    backgroundColor: BG,
+    ...(Platform.OS === 'web' && { height: '100vh', overflow: 'hidden' })
   },
   loadingContainer: {
     flex: 1,
@@ -706,7 +708,10 @@ const styles = StyleSheet.create({
     fontWeight: '600'
   },
   scrollView: {
-    flex: 1
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 30,
   },
   section: {
     padding: 20

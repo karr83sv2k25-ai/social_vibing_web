@@ -11,7 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Keyboard,
-  TouchableWithoutFeedback,
+  Pressable,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
@@ -367,214 +367,210 @@ export default function WithEmailScreen({ navigation }) {
   return (
     <SafeAreaProvider>
       <SafeAreaView style={styles.background}>
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={styles.background}>
-            <KeyboardAvoidingView
-              behavior={Platform.OS === "ios" ? "padding" : "height"}
-              style={styles.background}
-              keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.background}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+        >
+          <ImageBackground
+            source={require('./assets/login_bg.png')}
+            style={styles.background}
+            resizeMode="cover"
+            blurRadius={10}>
+            <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
+
+            {/* 🔙 Back Button */}
+            <View style={styles.header}>
+              <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+                <Ionicons name="arrow-back" size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              style={styles.scrollView}
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
             >
-              <ImageBackground
-                source={require('./assets/login_bg.png')}
-                style={styles.background}
-                resizeMode="cover"
-                blurRadius={10}>
-                <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
+              <View style={styles.container}>
+                <Text style={styles.heading}>Create Account</Text>
+                <Text style={styles.subText}>Please fill in your details</Text>
 
-                {/* 🔙 Back Button */}
-                <View style={styles.header}>
-                  <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-                    <Ionicons name="arrow-back" size={18} color="#FFFFFF" />
-                  </TouchableOpacity>
-                </View>
+                {/* First Name Input */}
+                <LinearGradient
+                  colors={['rgba(5,0,14,0.5)', 'rgba(52,42,66,0.5)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="First Name"
+                    placeholderTextColor="#BDBDBD"
+                    value={firstName}
+                    onChangeText={setFirstName}
+                  />
+                </LinearGradient>
 
-                <ScrollView
-                  style={styles.scrollView}
-                  contentContainerStyle={styles.scrollContent}
-                  showsVerticalScrollIndicator={false}
-                  keyboardShouldPersistTaps="handled"
+                {/* Last Name Input */}
+                <LinearGradient
+                  colors={['rgba(5,0,14,0.5)', 'rgba(52,42,66,0.5)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Last Name"
+                    placeholderTextColor="#BDBDBD"
+                    value={lastName}
+                    onChangeText={setLastName}
+                  />
+                </LinearGradient>
+
+                {/* Username Input */}
+                <LinearGradient
+                  colors={['rgba(5,0,14,0.5)', 'rgba(52,42,66,0.5)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[styles.inputContainer, usernameError && styles.invalidInput]}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Username"
+                    placeholderTextColor="#BDBDBD"
+                    value={username}
+                    onChangeText={handleUsernameChange}
+                    onBlur={handleUsernameBlur}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </LinearGradient>
+                {isCheckingUsername ? (
+                  <Text style={styles.validationHelperText}>Checking username availability...</Text>
+                ) : (
+                  usernameError ? (
+                    <Text style={styles.validationText}>{usernameError}</Text>
+                  ) : null
+                )}
+
+                {/* Email Input */}
+                <LinearGradient
+                  colors={['rgba(5,0,14,0.5)', 'rgba(52,42,66,0.5)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[styles.inputContainer, !isValidEmail && email && styles.invalidInput]}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Email"
+                    placeholderTextColor="#BDBDBD"
+                    keyboardType="email-address"
+                    value={email}
+                    onChangeText={validateEmail}
+                    autoCapitalize="none"
+                  />
+                </LinearGradient>
+                {email && !isValidEmail && (
+                  <Text style={styles.validationText}>
+                    Please enter a valid email address
+                  </Text>
+                )}
+
+                {/* Phone Number Input */}
+                <LinearGradient
+                  colors={['rgba(5,0,14,0.5)', 'rgba(52,42,66,0.5)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.inputContainer}>
+                  <PhoneInput
+                    ref={phoneInput}
+                    value={phoneNumber}
+                    defaultCode="US"
+                    layout="first"
+                    containerStyle={styles.phoneContainer}
+                    textContainerStyle={styles.phoneTextContainer}
+                    textInputStyle={styles.phoneTextInput}
+                    codeTextStyle={styles.phoneCodeText}
+                    placeholder="Enter phone number"
+                    textInputProps={{
+                      placeholderTextColor: '#BDBDBD',
+                    }}
+                    flagButtonStyle={styles.flagButton}
+                    countryPickerButtonStyle={styles.countryButton}
+                    onChangeFormattedText={validatePhoneInRealTime}
+                    withDarkTheme
+                    autoFocus={false}
+                  />
+                </LinearGradient>
+                {phoneNumber && !isValidPhone && (
+                  <Text style={styles.validationText}>
+                    Please enter a valid phone number
+                  </Text>
+                )}
+
+                {/* Password Input */}
+                <LinearGradient
+                  colors={['rgba(5,0,14,0.5)', 'rgba(52,42,66,0.5)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[styles.inputContainer, !isStrongPassword && password && styles.invalidInput]}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Password"
+                    placeholderTextColor="#BDBDBD"
+                    secureTextEntry
+                    value={password}
+                    onChangeText={validatePassword}
+                  />
+                </LinearGradient>
+
+                {/* Confirm Password Input */}
+                <LinearGradient
+                  colors={['rgba(5,0,14,0.5)', 'rgba(52,42,66,0.5)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[styles.inputContainer, !passwordsMatch && confirmPassword && styles.invalidInput]}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Confirm Password"
+                    placeholderTextColor="#BDBDBD"
+                    secureTextEntry
+                    value={confirmPassword}
+                    onChangeText={validateConfirmPassword}
+                  />
+                </LinearGradient>
+
+                {/* Password Requirements */}
+                {password && !isStrongPassword && (
+                  <Text style={styles.requirementText}>
+                    Password must be at least 8 characters long
+                  </Text>
+                )}
+
+                {/* Terms Text */}
+                <Text style={styles.termsText}>
+                  By signing up, you agree to our{' '}
+                  <Text style={styles.linkText}>Terms of Service</Text> and{' '}
+                  <Text style={styles.linkText}>Privacy Policy</Text>.
+                </Text>
+
+                {/* Sign Up Button */}
+                <TouchableOpacity
+                  onPress={handleSignup}
+                  activeOpacity={0.8}
+                  disabled={isSubmitting || isCheckingUsername}
                 >
-                  <View style={styles.container}>
-                    <Text style={styles.heading}>Create Account</Text>
-                    <Text style={styles.subText}>Please fill in your details</Text>
-
-                    {/* First Name Input */}
-                    <LinearGradient
-                      colors={['rgba(5,0,14,0.5)', 'rgba(52,42,66,0.5)']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.inputContainer}>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="First Name"
-                        placeholderTextColor="#BDBDBD"
-                        value={firstName}
-                        onChangeText={setFirstName}
-                      />
-                    </LinearGradient>
-
-                    {/* Last Name Input */}
-                    <LinearGradient
-                      colors={['rgba(5,0,14,0.5)', 'rgba(52,42,66,0.5)']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.inputContainer}>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="Last Name"
-                        placeholderTextColor="#BDBDBD"
-                        value={lastName}
-                        onChangeText={setLastName}
-                      />
-                    </LinearGradient>
-
-                    {/* Username Input */}
-                    <LinearGradient
-                      colors={['rgba(5,0,14,0.5)', 'rgba(52,42,66,0.5)']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={[styles.inputContainer, usernameError && styles.invalidInput]}>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="Username"
-                        placeholderTextColor="#BDBDBD"
-                        value={username}
-                        onChangeText={handleUsernameChange}
-                        onBlur={handleUsernameBlur}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                      />
-                    </LinearGradient>
-                    {isCheckingUsername ? (
-                      <Text style={styles.validationHelperText}>Checking username availability...</Text>
-                    ) : (
-                      usernameError ? (
-                        <Text style={styles.validationText}>{usernameError}</Text>
-                      ) : null
-                    )}
-
-                    {/* Email Input */}
-                    <LinearGradient
-                      colors={['rgba(5,0,14,0.5)', 'rgba(52,42,66,0.5)']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={[styles.inputContainer, !isValidEmail && email && styles.invalidInput]}>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="Email"
-                        placeholderTextColor="#BDBDBD"
-                        keyboardType="email-address"
-                        value={email}
-                        onChangeText={validateEmail}
-                        autoCapitalize="none"
-                      />
-                    </LinearGradient>
-                    {email && !isValidEmail && (
-                      <Text style={styles.validationText}>
-                        Please enter a valid email address
-                      </Text>
-                    )}
-
-                    {/* Phone Number Input */}
-                    <LinearGradient
-                      colors={['rgba(5,0,14,0.5)', 'rgba(52,42,66,0.5)']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.inputContainer}>
-                      <PhoneInput
-                        ref={phoneInput}
-                        value={phoneNumber}
-                        defaultCode="US"
-                        layout="first"
-                        containerStyle={styles.phoneContainer}
-                        textContainerStyle={styles.phoneTextContainer}
-                        textInputStyle={styles.phoneTextInput}
-                        codeTextStyle={styles.phoneCodeText}
-                        placeholder="Enter phone number"
-                        textInputProps={{
-                          placeholderTextColor: '#BDBDBD',
-                        }}
-                        flagButtonStyle={styles.flagButton}
-                        countryPickerButtonStyle={styles.countryButton}
-                        onChangeFormattedText={validatePhoneInRealTime}
-                        withDarkTheme
-                        autoFocus={false}
-                      />
-                    </LinearGradient>
-                    {phoneNumber && !isValidPhone && (
-                      <Text style={styles.validationText}>
-                        Please enter a valid phone number
-                      </Text>
-                    )}
-
-                    {/* Password Input */}
-                    <LinearGradient
-                      colors={['rgba(5,0,14,0.5)', 'rgba(52,42,66,0.5)']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={[styles.inputContainer, !isStrongPassword && password && styles.invalidInput]}>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="Password"
-                        placeholderTextColor="#BDBDBD"
-                        secureTextEntry
-                        value={password}
-                        onChangeText={validatePassword}
-                      />
-                    </LinearGradient>
-
-                    {/* Confirm Password Input */}
-                    <LinearGradient
-                      colors={['rgba(5,0,14,0.5)', 'rgba(52,42,66,0.5)']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={[styles.inputContainer, !passwordsMatch && confirmPassword && styles.invalidInput]}>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="Confirm Password"
-                        placeholderTextColor="#BDBDBD"
-                        secureTextEntry
-                        value={confirmPassword}
-                        onChangeText={validateConfirmPassword}
-                      />
-                    </LinearGradient>
-
-                    {/* Password Requirements */}
-                    {password && !isStrongPassword && (
-                      <Text style={styles.requirementText}>
-                        Password must be at least 8 characters long
-                      </Text>
-                    )}
-
-                    {/* Terms Text */}
-                    <Text style={styles.termsText}>
-                      By signing up, you agree to our{' '}
-                      <Text style={styles.linkText}>Terms of Service</Text> and{' '}
-                      <Text style={styles.linkText}>Privacy Policy</Text>.
+                  <LinearGradient
+                    colors={['rgba(255, 6, 200, 0.4)', 'rgba(255, 6, 200, 0.1)']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={[styles.button, (isSubmitting || isCheckingUsername) && styles.buttonDisabled]}>
+                    <Text style={styles.buttonText}>
+                      {isSubmitting ? 'Creating...' : 'Create Account'}
                     </Text>
-
-                    {/* Sign Up Button */}
-                    <TouchableOpacity
-                      onPress={handleSignup}
-                      activeOpacity={0.8}
-                      disabled={isSubmitting || isCheckingUsername}
-                    >
-                      <LinearGradient
-                        colors={['rgba(255, 6, 200, 0.4)', 'rgba(255, 6, 200, 0.1)']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={[styles.button, (isSubmitting || isCheckingUsername) && styles.buttonDisabled]}>
-                        <Text style={styles.buttonText}>
-                          {isSubmitting ? 'Creating...' : 'Create Account'}
-                        </Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  </View>
-                </ScrollView>
-              </ImageBackground>
-            </KeyboardAvoidingView>
-          </View>
-        </TouchableWithoutFeedback>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </ImageBackground>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </SafeAreaProvider>
   );
@@ -615,11 +611,11 @@ const styles = StyleSheet.create({
   },
 
   container: {
-    flex: 1,
     marginTop: 120,
     justifyContent: 'flex-start',
     alignItems: 'center',
     paddingHorizontal: 20,
+    paddingBottom: 40,
   },
 
   heading: {

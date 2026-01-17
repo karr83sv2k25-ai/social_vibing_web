@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Image,
   Dimensions,
   Alert,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -21,9 +22,45 @@ export default function SplashScreens({ navigation }) {
   const [screen, setScreen] = useState(1);
   const [selectedInterests, setSelectedInterests] = useState([]);
 
-  const navigateToApp = () => {
+  // Check if user has already seen splash on mount
+  useEffect(() => {
+    const checkSplashStatus = async () => {
+      try {
+        const hasSeenSplash = await AsyncStorage.getItem('hasSeenSplash');
+        console.log('🎬 SplashScreen mounted - hasSeenSplash:', hasSeenSplash);
+        console.log('🎬 auth.currentUser:', auth.currentUser?.email || 'Not logged in');
+        console.log('🎬 Platform:', Platform.OS);
+
+        if (hasSeenSplash === 'true') {
+          // User has already seen splash screens, redirect them
+          console.log('⏭️ User has already seen welcome screens, redirecting...');
+          const isLoggedIn = Boolean(auth.currentUser);
+          const targetRoute = isLoggedIn ? 'TabBar' : 'Login';
+          console.log('⏭️ Redirecting to:', targetRoute);
+          navigation.replace(targetRoute);
+        } else {
+          console.log('👋 Showing welcome screens to first-time user');
+        }
+      } catch (error) {
+        console.log('Error checking splash status:', error);
+      }
+    };
+
+    checkSplashStatus();
+  }, []);
+
+  const navigateToApp = async () => {
+    // Mark that user has seen splash screens
+    try {
+      await AsyncStorage.setItem('hasSeenSplash', 'true');
+      console.log('✅ hasSeenSplash set to true - user has completed welcome screens');
+    } catch (error) {
+      console.log('Error saving splash screen state:', error);
+    }
+
     const isLoggedIn = Boolean(auth.currentUser);
     const targetRoute = isLoggedIn ? 'TabBar' : 'Login';
+    console.log('🚀 Navigating to:', targetRoute);
 
     navigation.reset({
       index: 0,
@@ -51,7 +88,7 @@ export default function SplashScreens({ navigation }) {
     try {
       // Save to AsyncStorage for non-authenticated users
       await AsyncStorage.setItem('userInterests', JSON.stringify(selectedInterests));
-      
+
       // If user is authenticated, save to Firestore
       if (auth.currentUser) {
         const userRef = doc(db, 'users', auth.currentUser.uid);
@@ -60,7 +97,7 @@ export default function SplashScreens({ navigation }) {
           interestsUpdatedAt: new Date().toISOString()
         });
       }
-      
+
       navigateToApp();
     } catch (error) {
       console.error('Error saving interests:', error);
@@ -68,6 +105,10 @@ export default function SplashScreens({ navigation }) {
       navigateToApp();
     }
   };
+
+  const isWeb = Platform.OS === 'web';
+  const { width: screenWidth } = Dimensions.get('window');
+  const isDesktop = isWeb && screenWidth >= 768;
 
   // Splash 1 & 2
   if (screen === 1 || screen === 2) {
@@ -78,20 +119,20 @@ export default function SplashScreens({ navigation }) {
             ? require('./assets/splash1.png')
             : require('./assets/splash2.png')
         }
-        style={styles.background}
+        style={[styles.background, isDesktop && styles.backgroundDesktop]}
         resizeMode="cover">
-        <View style={styles.overlayLeft}>
-          <Text style={styles.titleLeft}>
+        <View style={[styles.overlayLeft, isDesktop && styles.overlayDesktop]}>
+          <Text style={[styles.titleLeft, isDesktop && styles.titleDesktop]}>
             {screen === 1 ? 'Welcome to Social Vibing!' : 'Connect & Share'}
           </Text>
-          <Text style={styles.subTextLeft}>
-            {screen === 1 
+          <Text style={[styles.subTextLeft, isDesktop && styles.subTextDesktop]}>
+            {screen === 1
               ? 'Join our vibrant community to share\nmoments, chat, and connect with friends'
               : 'Create communities, share experiences,\nand vibe with like-minded people'}
           </Text>
 
           {/* Centered Dots */}
-          <View style={styles.dotsContainerCenter}>
+          <View style={[styles.dotsContainerCenter, isDesktop && styles.dotsContainerDesktop]}>
             <View
               style={[styles.dot, screen === 1 ? styles.activeDot : null]}
             />
@@ -108,7 +149,7 @@ export default function SplashScreens({ navigation }) {
         <TouchableOpacity
           onPress={handleNext}
           activeOpacity={0.8}
-          style={styles.nextButtonRight}>
+          style={[styles.nextButtonRight, isDesktop && styles.nextButtonDesktop]}>
           <Ionicons name="arrow-forward" size={22} color="#fff" />
         </TouchableOpacity>
       </ImageBackground>
@@ -119,14 +160,14 @@ export default function SplashScreens({ navigation }) {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: '#000' }}
-      contentContainerStyle={{ paddingBottom: 40 }}
+      contentContainerStyle={[{ paddingBottom: 40 }, isDesktop && { alignItems: 'center' }]}
       showsVerticalScrollIndicator={false}>
       <ImageBackground
         source={require('./assets/splash3.jpg')}
-        style={styles.topBackground}
+        style={[styles.topBackground, isDesktop && styles.topBackgroundDesktop]}
         resizeMode="cover">
-        <View style={styles.textBoxWrapper}>
-          <View style={styles.textBox}>
+        <View style={[styles.textBoxWrapper, isDesktop && styles.textBoxWrapperDesktop]}>
+          <View style={[styles.textBox, isDesktop && styles.textBoxDesktop]}>
             <Text style={styles.heading}>What are you interested in?</Text>
             <Text style={styles.subText2}>
               Let us know your interest and enjoy app better
@@ -135,8 +176,8 @@ export default function SplashScreens({ navigation }) {
         </View>
       </ImageBackground>
 
-      <View style={styles.bottomContainer}>
-        <View style={styles.boxGrid}>
+      <View style={[styles.bottomContainer, isDesktop && styles.bottomContainerDesktop]}>
+        <View style={[styles.boxGrid, isDesktop && styles.boxGridDesktop]}>
           {[
             { img: require('./assets/s1.jpg'), title: 'Music' },
             { img: require('./assets/s2.jpg'), title: 'Movies' },
@@ -151,7 +192,7 @@ export default function SplashScreens({ navigation }) {
             const isSelected = selectedInterests.includes(item.title);
             return (
               <View key={index} style={styles.boxWrapper}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[
                     styles.box,
                     isSelected && styles.boxSelected
@@ -198,6 +239,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
     alignItems: 'center',
+    backgroundColor: '#000',
   },
 
   overlayLeft: {
@@ -378,6 +420,62 @@ const styles = StyleSheet.create({
     color: '#05FF00',
     fontSize: 16,
     fontWeight: '700',
+  },
+
+  // Desktop responsive styles
+  backgroundDesktop: {
+    justifyContent: 'center',
+  },
+
+  overlayDesktop: {
+    alignSelf: 'center',
+    maxWidth: 600,
+    paddingHorizontal: 40,
+  },
+
+  titleDesktop: {
+    fontSize: 36,
+    textAlign: 'center',
+  },
+
+  subTextDesktop: {
+    fontSize: 16,
+    textAlign: 'center',
+  },
+
+  dotsContainerDesktop: {
+    marginTop: 20,
+  },
+
+  nextButtonDesktop: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    right: 50,
+    bottom: 80,
+  },
+
+  topBackgroundDesktop: {
+    width: '100%',
+    maxWidth: 800,
+  },
+
+  textBoxWrapperDesktop: {
+    maxWidth: 800,
+  },
+
+  textBoxDesktop: {
+    maxWidth: 800,
+  },
+
+  bottomContainerDesktop: {
+    maxWidth: 800,
+    width: '100%',
+  },
+
+  boxGridDesktop: {
+    maxWidth: 700,
+    gap: 20,
   },
 });
 

@@ -4665,147 +4665,231 @@ export default function GroupInfoScreen() {
 
   // Handle Leave Community
   const handleLeaveCommunity = () => {
-    Alert.alert(
-      'Leave Community',
-      `Are you sure you want to leave "${community?.name || 'this community'}"? You will be removed from the members list.`,
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel'
-        },
-        {
-          text: 'Leave & Remove',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              if (!auth.currentUser || !communityId) {
-                Alert.alert('Error', 'Unable to leave community at this time.');
-                return;
-              }
+    // On web, use window.confirm
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm(
+        `Are you sure you want to leave "${community?.name || 'this community'}"?\n\nYou will be removed from the members list.`
+      );
 
-              const userId = auth.currentUser.uid;
-              const membershipId = `${userId}_${communityId}`;
-
-              // Delete membership document
-              const membershipRef = doc(db, 'communities_members', membershipId);
-              await deleteDoc(membershipRef);
-
-              // Update community document - remove user from members array
-              const communityRef = doc(db, 'communities', communityId);
-              await runTransaction(db, async (transaction) => {
-                const communitySnap = await transaction.get(communityRef);
-                if (!communitySnap.exists()) {
-                  throw new Error('Community not found');
-                }
-
-                const communityData = communitySnap.data();
-                let updatedMembers = [];
-
-                // Handle members array
-                if (Array.isArray(communityData.members)) {
-                  updatedMembers = communityData.members.filter(id => id !== userId);
-                }
-
-                // Decrement member count
-                const currentCount = communityData.members_count ||
-                  (Array.isArray(communityData.members) ? communityData.members.length : 0);
-                const newCount = Math.max(0, currentCount - 1);
-
-                transaction.update(communityRef, {
-                  members: updatedMembers,
-                  members_count: newCount
-                });
-              });
-
-              Alert.alert(
-                'Left Successfully',
-                'You have been removed from the community.',
-                [
-                  {
-                    text: 'OK',
-                    onPress: () => navigation.goBack()
-                  }
-                ]
-              );
-            } catch (error) {
-              console.error('Error leaving community:', error);
-              Alert.alert('Error', 'Failed to leave community. Please try again.');
-            }
+      if (confirmed) {
+        performLeaveCommunity();
+      }
+    } else {
+      // Native platforms - use Alert.alert
+      Alert.alert(
+        'Leave Community',
+        `Are you sure you want to leave "${community?.name || 'this community'}"? You will be removed from the members list.`,
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel'
+          },
+          {
+            text: 'Leave & Remove',
+            style: 'destructive',
+            onPress: performLeaveCommunity
           }
+        ]
+      );
+    }
+  };
+
+  // Extracted leave logic for reuse
+  const performLeaveCommunity = async () => {
+    try {
+      if (!auth.currentUser || !communityId) {
+        const errorMsg = 'Unable to leave community at this time.';
+        if (Platform.OS === 'web') {
+          window.alert(errorMsg);
+        } else {
+          Alert.alert('Error', errorMsg);
         }
-      ]
-    );
+        return;
+      }
+
+      const userId = auth.currentUser.uid;
+      const membershipId = `${userId}_${communityId}`;
+
+      console.log('🚪 Leaving community...', { userId, communityId });
+
+      // Delete membership document
+      const membershipRef = doc(db, 'communities_members', membershipId);
+      await deleteDoc(membershipRef);
+
+      // Update community document - remove user from members array
+      const communityRef = doc(db, 'communities', communityId);
+      await runTransaction(db, async (transaction) => {
+        const communitySnap = await transaction.get(communityRef);
+        if (!communitySnap.exists()) {
+          throw new Error('Community not found');
+        }
+
+        const communityData = communitySnap.data();
+        let updatedMembers = [];
+
+        // Handle members array
+        if (Array.isArray(communityData.members)) {
+          updatedMembers = communityData.members.filter(id => id !== userId);
+        }
+
+        // Decrement member count
+        const currentCount = communityData.members_count ||
+          (Array.isArray(communityData.members) ? communityData.members.length : 0);
+        const newCount = Math.max(0, currentCount - 1);
+
+        transaction.update(communityRef, {
+          members: updatedMembers,
+          members_count: newCount
+        });
+      });
+
+      console.log('✅ Left community successfully');
+
+      const successMsg = 'You have been removed from the community.';
+      if (Platform.OS === 'web') {
+        window.alert(successMsg);
+        if (navigation.canGoBack()) {
+          navigation.goBack();
+        } else {
+          navigation.navigate('Home');
+        }
+      } else {
+        Alert.alert(
+          'Left Successfully',
+          successMsg,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                if (navigation.canGoBack()) {
+                  navigation.goBack();
+                } else {
+                  navigation.navigate('Home');
+                }
+              }
+            }
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('❌ Error leaving community:', error);
+      const errorMsg = 'Failed to leave community. Please try again.';
+      if (Platform.OS === 'web') {
+        window.alert('Error: ' + errorMsg);
+      } else {
+        Alert.alert('Error', errorMsg);
+      }
+    }
   };
 
   // Handle Kick Member (Admin Only)
   const handleKickMember = (memberId, memberName) => {
     if (!isAdmin) {
-      Alert.alert('Error', 'Only admins can kick members.');
+      const errorMsg = 'Only admins can kick members.';
+      if (Platform.OS === 'web') {
+        window.alert(errorMsg);
+      } else {
+        Alert.alert('Error', errorMsg);
+      }
       return;
     }
 
-    Alert.alert(
-      'Kick Member',
-      `Are you sure you want to remove ${memberName} from this community?`,
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel'
-        },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              if (!communityId || !memberId) {
-                Alert.alert('Error', 'Unable to remove member at this time.');
-                return;
-              }
+    // On web, use window.confirm
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm(
+        `Are you sure you want to remove ${memberName} from this community?`
+      );
 
-              const membershipId = `${memberId}_${communityId}`;
-
-              // Delete membership document
-              const membershipRef = doc(db, 'communities_members', membershipId);
-              await deleteDoc(membershipRef);
-
-              // Update community document - remove user from members array
-              const communityRef = doc(db, 'communities', communityId);
-              await runTransaction(db, async (transaction) => {
-                const communitySnap = await transaction.get(communityRef);
-                if (!communitySnap.exists()) {
-                  throw new Error('Community not found');
-                }
-
-                const communityData = communitySnap.data();
-                let updatedMembers = [];
-
-                // Handle members array
-                if (Array.isArray(communityData.members)) {
-                  updatedMembers = communityData.members.filter(id => id !== memberId);
-                }
-
-                // Decrement member count
-                const currentCount = communityData.members_count ||
-                  (Array.isArray(communityData.members) ? communityData.members.length : 0);
-                const newCount = Math.max(0, currentCount - 1);
-
-                transaction.update(communityRef, {
-                  members: updatedMembers,
-                  members_count: newCount
-                });
-              });
-
-              // Refresh members list
-              setAllMembers(prevMembers => prevMembers.filter(m => m.id !== memberId));
-              Alert.alert('Success', `${memberName} has been removed from the community.`);
-            } catch (error) {
-              console.error('Error kicking member:', error);
-              Alert.alert('Error', 'Failed to remove member. Please try again.');
-            }
+      if (confirmed) {
+        performKickMember(memberId, memberName);
+      }
+    } else {
+      // Native platforms - use Alert.alert
+      Alert.alert(
+        'Kick Member',
+        `Are you sure you want to remove ${memberName} from this community?`,
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel'
+          },
+          {
+            text: 'Remove',
+            style: 'destructive',
+            onPress: () => performKickMember(memberId, memberName)
           }
+        ]
+      );
+    }
+  };
+
+  // Extracted kick member logic for reuse
+  const performKickMember = async (memberId, memberName) => {
+    try {
+      if (!communityId || !memberId) {
+        const errorMsg = 'Unable to remove member at this time.';
+        if (Platform.OS === 'web') {
+          window.alert(errorMsg);
+        } else {
+          Alert.alert('Error', errorMsg);
         }
-      ]
-    );
+        return;
+      }
+
+      console.log('👢 Kicking member...', { memberId, memberName });
+
+      const membershipId = `${memberId}_${communityId}`;
+
+      // Delete membership document
+      const membershipRef = doc(db, 'communities_members', membershipId);
+      await deleteDoc(membershipRef);
+
+      // Update community document - remove user from members array
+      const communityRef = doc(db, 'communities', communityId);
+      await runTransaction(db, async (transaction) => {
+        const communitySnap = await transaction.get(communityRef);
+        if (!communitySnap.exists()) {
+          throw new Error('Community not found');
+        }
+
+        const communityData = communitySnap.data();
+        let updatedMembers = [];
+
+        // Handle members array
+        if (Array.isArray(communityData.members)) {
+          updatedMembers = communityData.members.filter(id => id !== memberId);
+        }
+
+        // Decrement member count
+        const currentCount = communityData.members_count ||
+          (Array.isArray(communityData.members) ? communityData.members.length : 0);
+        const newCount = Math.max(0, currentCount - 1);
+
+        transaction.update(communityRef, {
+          members: updatedMembers,
+          members_count: newCount
+        });
+      });
+
+      // Refresh members list
+      setAllMembers(prevMembers => prevMembers.filter(m => m.id !== memberId));
+      console.log('✅ Member kicked successfully');
+
+      const successMsg = `${memberName} has been removed from the community.`;
+      if (Platform.OS === 'web') {
+        window.alert(successMsg);
+      } else {
+        Alert.alert('Success', successMsg);
+      }
+    } catch (error) {
+      console.error('❌ Error kicking member:', error);
+      const errorMsg = 'Failed to remove member. Please try again.';
+      if (Platform.OS === 'web') {
+        window.alert('Error: ' + errorMsg);
+      } else {
+        Alert.alert('Error', errorMsg);
+      }
+    }
   };
 
   // Handle Share Community - Show options
@@ -4915,58 +4999,104 @@ export default function GroupInfoScreen() {
 
   // Handle Delete Community
   const handleDeleteCommunity = () => {
-    Alert.alert(
-      'Delete Community',
-      `Are you sure you want to permanently delete "${community?.name || 'this community'}"? This action cannot be undone and will remove all posts, members, and data.`,
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel'
-        },
-        {
-          text: 'Delete Permanently',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              if (!communityId || !isAdmin) {
-                Alert.alert('Error', 'Only admins can delete communities.');
-                return;
-              }
+    // On web, Alert.alert doesn't work properly with buttons
+    // Use window.confirm instead
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm(
+        `Are you sure you want to permanently delete "${community?.name || 'this community'}"?\n\nThis action cannot be undone and will remove all posts, members, and data.`
+      );
 
-              // Delete community document
-              const communityRef = doc(db, 'communities', communityId);
-              await deleteDoc(communityRef);
-
-              // Delete all membership documents
-              const membershipsQuery = collection(db, 'communities_members');
-              const firestore = await import('firebase/firestore');
-              const q = firestore.query(membershipsQuery, firestore.where('community_id', '==', communityId));
-              const membershipsSnapshot = await firestore.getDocs(q);
-
-              const deletePromises = membershipsSnapshot.docs.map(doc => deleteDoc(doc.ref));
-              await Promise.all(deletePromises);
-
-              // Delete all chat messages (optional - can be heavy operation)
-              // For now, just delete the main community
-
-              Alert.alert(
-                'Community Deleted',
-                'The community has been permanently deleted.',
-                [
-                  {
-                    text: 'OK',
-                    onPress: () => navigation.goBack()
-                  }
-                ]
-              );
-            } catch (error) {
-              console.error('Error deleting community:', error);
-              Alert.alert('Error', 'Failed to delete community. Please try again.');
-            }
+      if (confirmed) {
+        performDeleteCommunity();
+      }
+    } else {
+      // Native platforms - use Alert.alert
+      Alert.alert(
+        'Delete Community',
+        `Are you sure you want to permanently delete "${community?.name || 'this community'}"? This action cannot be undone and will remove all posts, members, and data.`,
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel'
+          },
+          {
+            text: 'Delete Permanently',
+            style: 'destructive',
+            onPress: performDeleteCommunity
           }
+        ]
+      );
+    }
+  };
+
+  // Extracted delete logic for reuse
+  const performDeleteCommunity = async () => {
+    try {
+      if (!communityId || !isAdmin) {
+        const errorMsg = 'Only admins can delete communities.';
+        if (Platform.OS === 'web') {
+          window.alert(errorMsg);
+        } else {
+          Alert.alert('Error', errorMsg);
         }
-      ]
-    );
+        return;
+      }
+
+      console.log('🗑️ Starting community deletion...', communityId);
+
+      // Delete community document
+      const communityRef = doc(db, 'communities', communityId);
+      await deleteDoc(communityRef);
+      console.log('✅ Community document deleted');
+
+      // Delete all membership documents
+      const membershipsQuery = collection(db, 'communities_members');
+      const firestore = await import('firebase/firestore');
+      const q = firestore.query(membershipsQuery, firestore.where('community_id', '==', communityId));
+      const membershipsSnapshot = await firestore.getDocs(q);
+
+      const deletePromises = membershipsSnapshot.docs.map(doc => deleteDoc(doc.ref));
+      await Promise.all(deletePromises);
+      console.log(`✅ Deleted ${deletePromises.length} membership documents`);
+
+      // Delete all chat messages (optional - can be heavy operation)
+      // For now, just delete the main community
+
+      const successMsg = 'The community has been permanently deleted.';
+      if (Platform.OS === 'web') {
+        window.alert(successMsg);
+        if (navigation.canGoBack()) {
+          navigation.goBack();
+        } else {
+          navigation.navigate('Home');
+        }
+      } else {
+        Alert.alert(
+          'Community Deleted',
+          successMsg,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                if (navigation.canGoBack()) {
+                  navigation.goBack();
+                } else {
+                  navigation.navigate('Home');
+                }
+              }
+            }
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('❌ Error deleting community:', error);
+      const errorMsg = 'Failed to delete community. Please try again.';
+      if (Platform.OS === 'web') {
+        window.alert('Error: ' + errorMsg);
+      } else {
+        Alert.alert('Error', errorMsg);
+      }
+    }
   };
 
   // Handle Start Audio Call
@@ -4974,54 +5104,56 @@ export default function GroupInfoScreen() {
     <View style={styles.container}>
       {/* Top Bar */}
       <View style={styles.topBar}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity onPress={() => {
+          if (navigation.canGoBack()) {
+            navigation.goBack();
+          } else {
+            navigation.navigate('Home');
+          }
+        }}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
 
-        {isDesktop ? (
-          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 32, marginHorizontal: 40 }}>
-            <TouchableOpacity
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8, backgroundColor: activeTab === 'community' ? '#8B2EF0' : 'transparent' }}
-              onPress={() => setActiveTab('community')}
-            >
-              <Ionicons name="home" size={20} color={activeTab === 'community' ? '#fff' : '#888'} />
-              <Text style={{ color: activeTab === 'community' ? '#fff' : '#888', fontWeight: activeTab === 'community' ? '600' : '400', fontSize: 15 }}>Home</Text>
-            </TouchableOpacity>
+        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: isDesktop ? 32 : 12, marginHorizontal: isDesktop ? 40 : 8 }}>
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: isDesktop ? 16 : 8, borderRadius: 8, backgroundColor: activeTab === 'community' ? '#8B2EF0' : 'transparent' }}
+            onPress={() => setActiveTab('community')}
+          >
+            <Ionicons name="home" size={20} color={activeTab === 'community' ? '#fff' : '#888'} />
+            {isDesktop && <Text style={{ color: activeTab === 'community' ? '#fff' : '#888', fontWeight: activeTab === 'community' ? '600' : '400', fontSize: 15 }}>Home</Text>}
+          </TouchableOpacity>
 
-            <TouchableOpacity
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8, backgroundColor: activeTab === 'online' ? '#8B2EF0' : 'transparent' }}
-              onPress={() => setActiveTab('online')}
-            >
-              <Ionicons name="people" size={20} color={activeTab === 'online' ? '#fff' : '#888'} />
-              <Text style={{ color: activeTab === 'online' ? '#fff' : '#888', fontWeight: activeTab === 'online' ? '600' : '400', fontSize: 15 }}>Online</Text>
-            </TouchableOpacity>
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: isDesktop ? 16 : 8, borderRadius: 8, backgroundColor: activeTab === 'online' ? '#8B2EF0' : 'transparent' }}
+            onPress={() => setActiveTab('online')}
+          >
+            <Ionicons name="people" size={20} color={activeTab === 'online' ? '#fff' : '#888'} />
+            {isDesktop && <Text style={{ color: activeTab === 'online' ? '#fff' : '#888', fontWeight: activeTab === 'online' ? '600' : '400', fontSize: 15 }}>Online</Text>}
+          </TouchableOpacity>
 
-            <TouchableOpacity
-              style={{ backgroundColor: '#8B2EF0', width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' }}
-              onPress={() => setActiveTab('add')}
-            >
-              <AntDesign name="plus" size={24} color="#fff" />
-            </TouchableOpacity>
+          <TouchableOpacity
+            style={{ backgroundColor: '#8B2EF0', width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' }}
+            onPress={() => setActiveTab('add')}
+          >
+            <AntDesign name="plus" size={24} color="#fff" />
+          </TouchableOpacity>
 
-            <TouchableOpacity
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8, backgroundColor: activeTab === 'chat' ? '#8B2EF0' : 'transparent' }}
-              onPress={() => setActiveTab('chat')}
-            >
-              <Ionicons name="chatbubbles" size={20} color={activeTab === 'chat' ? '#fff' : '#888'} />
-              <Text style={{ color: activeTab === 'chat' ? '#fff' : '#888', fontWeight: activeTab === 'chat' ? '600' : '400', fontSize: 15 }}>Chat</Text>
-            </TouchableOpacity>
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: isDesktop ? 16 : 8, borderRadius: 8, backgroundColor: activeTab === 'chat' ? '#8B2EF0' : 'transparent' }}
+            onPress={() => setActiveTab('chat')}
+          >
+            <Ionicons name="chatbubbles" size={20} color={activeTab === 'chat' ? '#fff' : '#888'} />
+            {isDesktop && <Text style={{ color: activeTab === 'chat' ? '#fff' : '#888', fontWeight: activeTab === 'chat' ? '600' : '400', fontSize: 15 }}>Chat</Text>}
+          </TouchableOpacity>
 
-            <TouchableOpacity
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8, backgroundColor: activeTab === 'account' ? '#8B2EF0' : 'transparent' }}
-              onPress={() => setActiveTab('account')}
-            >
-              <Ionicons name="person" size={20} color={activeTab === 'account' ? '#fff' : '#888'} />
-              <Text style={{ color: activeTab === 'account' ? '#fff' : '#888', fontWeight: activeTab === 'account' ? '600' : '400', fontSize: 15 }}>Account</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <Text style={styles.topBarTitle}>{community?.name || groupTitle || 'Community'}</Text>
-        )}
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: isDesktop ? 16 : 8, borderRadius: 8, backgroundColor: activeTab === 'account' ? '#8B2EF0' : 'transparent' }}
+            onPress={() => setActiveTab('account')}
+          >
+            <Ionicons name="person" size={20} color={activeTab === 'account' ? '#fff' : '#888'} />
+            {isDesktop && <Text style={{ color: activeTab === 'account' ? '#fff' : '#888', fontWeight: activeTab === 'account' ? '600' : '400', fontSize: 15 }}>Account</Text>}
+          </TouchableOpacity>
+        </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 15 }}>
           {isAdmin && (
@@ -5047,7 +5179,16 @@ export default function GroupInfoScreen() {
         <>
           {/* Content Area */}
           <ScrollView
-            style={{ flex: 1 }}
+            style={{
+              flex: 1,
+              ...(Platform.OS === 'web' && {
+                height: '100%',
+                overflow: 'auto',
+              })
+            }}
+            contentContainerStyle={{
+              ...(Platform.OS === 'web' && { paddingBottom: 50 })
+            }}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -6299,52 +6440,6 @@ export default function GroupInfoScreen() {
               </View>
             )}
           </ScrollView>
-
-          {/* Tab Bar at Bottom (Mobile Only) */}
-          {!isDesktop && (
-            <View style={styles.tabBar}>
-              <TouchableOpacity
-                style={[styles.tabItem, activeTab === 'community' && styles.tabItemActive]}
-                onPress={() => setActiveTab('community')}
-              >
-                <Ionicons name="home" size={24} color={activeTab === 'community' ? '#8B2EF0' : '#666'} />
-                <Text style={[styles.tabLabel, { color: activeTab === 'community' ? '#8B2EF0' : '#666' }]}>Home</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.tabItem, activeTab === 'online' && styles.tabItemActive]}
-                onPress={() => setActiveTab('online')}
-              >
-                <Ionicons name="people" size={24} color={activeTab === 'online' ? '#8B2EF0' : '#666'} />
-                <Text style={[styles.tabLabel, { color: activeTab === 'online' ? '#8B2EF0' : '#666' }]}>Online</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.tabItem, styles.tabItemCenter]}
-                onPress={() => setActiveTab('add')}
-              >
-                <View style={styles.addIconBg}>
-                  <AntDesign name="plus" size={28} color="#fff" />
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.tabItem, activeTab === 'chat' && styles.tabItemActive]}
-                onPress={() => setActiveTab('chat')}
-              >
-                <Ionicons name="chatbubbles" size={24} color={activeTab === 'chat' ? '#8B2EF0' : '#666'} />
-                <Text style={[styles.tabLabel, { color: activeTab === 'chat' ? '#8B2EF0' : '#666' }]}>Chat</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.tabItem, activeTab === 'account' && styles.tabItemActive]}
-                onPress={() => setActiveTab('account')}
-              >
-                <Ionicons name="person" size={24} color={activeTab === 'account' ? '#8B2EF0' : '#666'} />
-                <Text style={[styles.tabLabel, { color: activeTab === 'account' ? '#8B2EF0' : '#666' }]}>Account</Text>
-              </TouchableOpacity>
-            </View>
-          )}
         </>
       )}
 
@@ -8552,7 +8647,20 @@ export default function GroupInfoScreen() {
 
 const styles = StyleSheet.create({
   // Main container
-  container: { flex: 1, backgroundColor: '#121212' },
+  container: {
+    flex: 1,
+    backgroundColor: '#121212',
+    ...(Platform.OS === 'web' && {
+      height: '100vh',
+      width: '100vw',
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      overflow: 'hidden',
+      display: 'flex',
+      flexDirection: 'column',
+    }),
+  },
 
   // Top Bar
   topBar: {
@@ -8562,6 +8670,10 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingTop: 50,
     backgroundColor: '#0a0a0a',
+    ...(Platform.OS === 'web' && {
+      flexShrink: 0,
+      zIndex: 10,
+    }),
   },
   topBarTitle: {
     color: '#fff',
@@ -11921,6 +12033,3 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
   },
 });
-
-
-

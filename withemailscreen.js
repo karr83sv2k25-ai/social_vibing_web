@@ -8,8 +8,10 @@ import {
   TouchableOpacity,
   Alert,
   ScrollView,
+  Platform,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { CommonActions } from '@react-navigation/native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -124,12 +126,46 @@ export default function WithEmailScreen({ navigation }) {
         console.warn('⚠️  Failed to save login state:', storageError);
       }
 
-      Alert.alert('Success', 'Account created successfully!', [
-        {
-          text: 'OK',
-          onPress: () => navigation.replace('TabBar')
+      // New accounts ALWAYS see welcome screens (they haven't seen them yet)
+      console.log('🎉 New account created - showing welcome screens');
+      console.log('🌐 Platform:', Platform.OS);
+      console.log('🧭 Navigation object exists:', !!navigation);
+      console.log('🧭 Navigation dispatch exists:', !!navigation?.dispatch);
+
+      // Small delay to ensure auth state is set
+      await new Promise(resolve => setTimeout(resolve, 150));
+
+      // Navigate immediately without Alert on web for better UX
+      if (Platform.OS === 'web') {
+        console.log('🚀 Web: Navigating to welcome screens...');
+        try {
+          // On web, use reset to properly update URL and navigation state
+          navigation.dispatch(
+            CommonActions.reset({
+              index: 0,
+              routes: [{ name: 'Splash' }],
+            })
+          );
+          // Also manually update URL on web
+          if (typeof window !== 'undefined') {
+            window.history.pushState({}, '', '/welcome');
+          }
+          console.log('✅ Web: Navigation dispatched successfully');
+        } catch (navError) {
+          console.error('❌ Web: Navigation error:', navError);
         }
-      ]);
+      } else {
+        // On mobile, show alert first
+        Alert.alert('Success', 'Account created successfully!', [
+          {
+            text: 'OK',
+            onPress: () => {
+              console.log('🚀 Mobile: Navigating to welcome screens...');
+              navigation.replace('Splash');
+            }
+          }
+        ]);
+      }
     } catch (error) {
       console.error('Signup Error:', error);
       Alert.alert('Error', error.message);
@@ -150,8 +186,6 @@ export default function WithEmailScreen({ navigation }) {
       style={styles.background}
       blurRadius={10}>
       <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
-
-      {/* 🔙 Back Button */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={handleBack}>
           <Ionicons name="arrow-back" size={18} color="#FFFFFF" />
@@ -165,8 +199,6 @@ export default function WithEmailScreen({ navigation }) {
         <View style={styles.container}>
           <Text style={styles.heading}>Create Account</Text>
           <Text style={styles.subText}>Please fill in your details</Text>
-
-          {/* First Name Input */}
           <LinearGradient
             colors={['rgba(5,0,14,0.5)', 'rgba(52,42,66,0.5)']}
             start={{ x: 0, y: 0 }}
@@ -180,8 +212,6 @@ export default function WithEmailScreen({ navigation }) {
               onChangeText={setFirstName}
             />
           </LinearGradient>
-
-          {/* Last Name Input */}
           <LinearGradient
             colors={['rgba(5,0,14,0.5)', 'rgba(52,42,66,0.5)']}
             start={{ x: 0, y: 0 }}
@@ -195,8 +225,6 @@ export default function WithEmailScreen({ navigation }) {
               onChangeText={setLastName}
             />
           </LinearGradient>
-
-          {/* Email Input */}
           <LinearGradient
             colors={['rgba(5,0,14,0.5)', 'rgba(52,42,66,0.5)']}
             start={{ x: 0, y: 0 }}
@@ -212,8 +240,6 @@ export default function WithEmailScreen({ navigation }) {
               autoCapitalize="none"
             />
           </LinearGradient>
-
-          {/* Phone Number Input */}
           <LinearGradient
             colors={['rgba(5,0,14,0.5)', 'rgba(52,42,66,0.5)']}
             start={{ x: 0, y: 0 }}
@@ -242,8 +268,6 @@ export default function WithEmailScreen({ navigation }) {
               autoFocus={false}
             />
           </LinearGradient>
-
-          {/* Password Input */}
           <LinearGradient
             colors={['rgba(5,0,14,0.5)', 'rgba(52,42,66,0.5)']}
             start={{ x: 0, y: 0 }}
@@ -258,8 +282,6 @@ export default function WithEmailScreen({ navigation }) {
               onChangeText={validatePassword}
             />
           </LinearGradient>
-
-          {/* Confirm Password Input */}
           <LinearGradient
             colors={['rgba(5,0,14,0.5)', 'rgba(52,42,66,0.5)']}
             start={{ x: 0, y: 0 }}
@@ -274,22 +296,16 @@ export default function WithEmailScreen({ navigation }) {
               onChangeText={validateConfirmPassword}
             />
           </LinearGradient>
-
-          {/* Password Requirements */}
           {password && !isStrongPassword && (
             <Text style={styles.requirementText}>
               Password must contain at least 8 characters, including uppercase, lowercase, number and special character
             </Text>
           )}
-
-          {/* Terms Text */}
           <Text style={styles.termsText}>
             By signing up, you agree to our{' '}
             <Text style={styles.linkText}>Terms of Service</Text> and{' '}
             <Text style={styles.linkText}>Privacy Policy</Text>.
           </Text>
-
-          {/* Sign Up Button */}
           <TouchableOpacity onPress={handleSignup} activeOpacity={0.8}>
             <LinearGradient
               colors={['rgba(255, 6, 200, 0.4)', 'rgba(255, 6, 200, 0.1)']}

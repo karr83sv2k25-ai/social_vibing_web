@@ -54,9 +54,13 @@ export default function CommunityCreateGroupScreen({ navigation, route }) {
   const pickImage = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      
+
       if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Please grant camera roll permissions to upload a group photo.');
+        if (Platform.OS === 'web') {
+          window.alert('Please grant camera roll permissions to upload a group photo.');
+        } else {
+          Alert.alert('Permission Required', 'Please grant camera roll permissions to upload a group photo.');
+        }
         return;
       }
 
@@ -72,14 +76,18 @@ export default function CommunityCreateGroupScreen({ navigation, route }) {
       }
     } catch (error) {
       console.error('Error picking image:', error);
-      Alert.alert('Error', 'Failed to pick image. Please try again.');
+      if (Platform.OS === 'web') {
+        window.alert('Failed to pick image. Please try again.');
+      } else {
+        Alert.alert('Error', 'Failed to pick image. Please try again.');
+      }
     }
   };
 
   const takePhoto = async () => {
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      
+
       if (status !== 'granted') {
         Alert.alert('Permission Required', 'Please grant camera permissions to take a photo.');
         return;
@@ -101,35 +109,56 @@ export default function CommunityCreateGroupScreen({ navigation, route }) {
   };
 
   const selectPhotoOption = () => {
-    Alert.alert(
-      'Group Photo',
-      'Choose an option',
-      [
-        { text: 'Take Photo', onPress: takePhoto },
-        { text: 'Choose from Library', onPress: pickImage },
-        { text: 'Cancel', style: 'cancel' },
-      ]
-    );
+    if (Platform.OS === 'web') {
+      // Web: directly open image picker
+      pickImage();
+    } else {
+      Alert.alert(
+        'Group Photo',
+        'Choose an option',
+        [
+          { text: 'Take Photo', onPress: takePhoto },
+          { text: 'Choose from Library', onPress: pickImage },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+    }
   };
 
   const createGroup = async () => {
     if (!communityId) {
-      Alert.alert('Error', 'Community information is missing.');
+      if (Platform.OS === 'web') {
+        window.alert('Error: Community information is missing.');
+      } else {
+        Alert.alert('Error', 'Community information is missing.');
+      }
       return;
     }
 
     if (!groupName.trim()) {
-      Alert.alert('Group Name Required', 'Please enter a name for your group.');
+      if (Platform.OS === 'web') {
+        window.alert('Please enter a name for your group.');
+      } else {
+        Alert.alert('Group Name Required', 'Please enter a name for your group.');
+      }
       return;
     }
 
     if (groupName.length > 100) {
-      Alert.alert('Name Too Long', 'Group name must be 100 characters or less.');
+      if (Platform.OS === 'web') {
+        window.alert('Group name must be 100 characters or less.');
+      } else {
+        Alert.alert('Name Too Long', 'Group name must be 100 characters or less.');
+      }
       return;
     }
 
     if (description.length > 500) {
-      Alert.alert('Description Too Long', 'Description must be 500 characters or less.');
+      if (Platform.OS === 'web') {
+        window.alert('Description must be 500 characters or less.');
+      } else {
+        Alert.alert('Description Too Long', 'Description must be 500 characters or less.');
+      }
       return;
     }
 
@@ -163,22 +192,22 @@ export default function CommunityCreateGroupScreen({ navigation, route }) {
         createdByName: currentUserName,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        
+
         settings: {
           privacy: 'public',
           whoCanSendMessages: 'all', // all, adminsOnly
           whoCanJoin: 'anyone',
         },
-        
+
         memberCount: 0,
         messageCount: 0,
         lastMessage: null,
-        
+
         theme: {
           color: selectedColor,
           emoji: selectedEmoji,
         },
-        
+
         isActive: true,
         communityId: communityId,
         communityName: communityName || 'Community',
@@ -197,25 +226,40 @@ export default function CommunityCreateGroupScreen({ navigation, route }) {
         isDeleted: false,
       });
 
-      Alert.alert('Success', 'Group created successfully!', [
-        {
-          text: 'OK',
-          onPress: () => {
-            navigation.goBack();
-          }
+      if (Platform.OS === 'web') {
+        window.alert('Group created successfully!');
+        if (navigation.canGoBack()) {
+          navigation.goBack();
+        } else {
+          navigation.navigate('Home');
         }
-      ]);
+      } else {
+        Alert.alert('Success', 'Group created successfully!', [
+          {
+            text: 'OK',
+            onPress: () => {
+              navigation.goBack();
+            }
+          }
+        ]);
+      }
     } catch (error) {
       console.error('Error creating group:', error);
-      Alert.alert('Error', 'Failed to create group. Please try again.');
+      if (Platform.OS === 'web') {
+        window.alert('Error: Failed to create group. Please try again.');
+      } else {
+        Alert.alert('Error', 'Failed to create group. Please try again.');
+      }
     } finally {
       setCreating(false);
       setUploadingImage(false);
     }
   };
 
+  const Container = Platform.OS === 'web' ? View : SafeAreaView;
+
   return (
-    <SafeAreaView style={styles.container}>
+    <Container style={styles.container}>
       <LinearGradient colors={[BG, '#0F0F14', BG]} style={styles.gradient}>
         {/* Header */}
         <View style={styles.header}>
@@ -226,123 +270,123 @@ export default function CommunityCreateGroupScreen({ navigation, route }) {
           <View style={{ width: 40 }} />
         </View>
 
-        <KeyboardAvoidingView
-          style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={true}
+          nestedScrollEnabled={true}
         >
-          <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-            {/* Group Image */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Group Photo</Text>
-              <TouchableOpacity style={styles.imageContainer} onPress={selectPhotoOption}>
-                {groupImage ? (
-                  <Image source={{ uri: groupImage.uri }} style={styles.groupImagePreview} />
-                ) : (
-                  <View style={styles.imagePlaceholder}>
-                    <Ionicons name="camera" size={40} color={TEXT_DIM} />
-                    <Text style={styles.imagePlaceholderText}>Add Photo</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            {/* Group Name */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Group Name *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter group name"
-                placeholderTextColor={TEXT_DIM}
-                value={groupName}
-                onChangeText={setGroupName}
-                maxLength={100}
-              />
-              <Text style={styles.characterCount}>{groupName.length}/100</Text>
-            </View>
-
-            {/* Description */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Description</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                placeholder="What's this group about?"
-                placeholderTextColor={TEXT_DIM}
-                value={description}
-                onChangeText={setDescription}
-                multiline
-                numberOfLines={4}
-                maxLength={500}
-                textAlignVertical="top"
-              />
-              <Text style={styles.characterCount}>{description.length}/500</Text>
-            </View>
-
-            {/* Theme Color */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Theme Color</Text>
-              <View style={styles.colorGrid}>
-                {THEME_COLORS.map((item) => (
-                  <TouchableOpacity
-                    key={item.color}
-                    style={[
-                      styles.colorOption,
-                      { backgroundColor: item.color },
-                      selectedColor === item.color && styles.colorOptionSelected,
-                    ]}
-                    onPress={() => setSelectedColor(item.color)}
-                  >
-                    {selectedColor === item.color && (
-                      <Ionicons name="checkmark" size={24} color="#fff" />
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* Emoji */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Group Emoji</Text>
-              <View style={styles.emojiGrid}>
-                {GROUP_EMOJIS.map((emoji) => (
-                  <TouchableOpacity
-                    key={emoji}
-                    style={[
-                      styles.emojiOption,
-                      selectedEmoji === emoji && styles.emojiOptionSelected,
-                    ]}
-                    onPress={() => setSelectedEmoji(emoji)}
-                  >
-                    <Text style={styles.emojiText}>{emoji}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* Create Button */}
-            <TouchableOpacity
-              style={[
-                styles.createButton,
-                (creating || uploadingImage) && styles.createButtonDisabled,
-              ]}
-              onPress={createGroup}
-              disabled={creating || uploadingImage}
-            >
-              {creating || uploadingImage ? (
-                <ActivityIndicator color="#fff" />
+          {/* Group Image */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Group Photo</Text>
+            <TouchableOpacity style={styles.imageContainer} onPress={selectPhotoOption}>
+              {groupImage ? (
+                <Image source={{ uri: groupImage.uri }} style={styles.groupImagePreview} />
               ) : (
-                <>
-                  <Ionicons name="checkmark-circle" size={24} color="#fff" />
-                  <Text style={styles.createButtonText}>Create Group</Text>
-                </>
+                <View style={styles.imagePlaceholder}>
+                  <Ionicons name="camera" size={40} color={TEXT_DIM} />
+                  <Text style={styles.imagePlaceholderText}>Add Photo</Text>
+                </View>
               )}
             </TouchableOpacity>
+          </View>
 
-            <View style={{ height: 40 }} />
-          </ScrollView>
-        </KeyboardAvoidingView>
+          {/* Group Name */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Group Name *</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter group name"
+              placeholderTextColor={TEXT_DIM}
+              value={groupName}
+              onChangeText={setGroupName}
+              maxLength={100}
+            />
+            <Text style={styles.characterCount}>{groupName.length}/100</Text>
+          </View>
+
+          {/* Description */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Description</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              placeholder="What's this group about?"
+              placeholderTextColor={TEXT_DIM}
+              value={description}
+              onChangeText={setDescription}
+              multiline
+              numberOfLines={4}
+              maxLength={500}
+              textAlignVertical="top"
+            />
+            <Text style={styles.characterCount}>{description.length}/500</Text>
+          </View>
+
+          {/* Theme Color */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Theme Color</Text>
+            <View style={styles.colorGrid}>
+              {THEME_COLORS.map((item) => (
+                <TouchableOpacity
+                  key={item.color}
+                  style={[
+                    styles.colorOption,
+                    { backgroundColor: item.color },
+                    selectedColor === item.color && styles.colorOptionSelected,
+                  ]}
+                  onPress={() => setSelectedColor(item.color)}
+                >
+                  {selectedColor === item.color && (
+                    <Ionicons name="checkmark" size={24} color="#fff" />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* Emoji */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Group Emoji</Text>
+            <View style={styles.emojiGrid}>
+              {GROUP_EMOJIS.map((emoji) => (
+                <TouchableOpacity
+                  key={emoji}
+                  style={[
+                    styles.emojiOption,
+                    selectedEmoji === emoji && styles.emojiOptionSelected,
+                  ]}
+                  onPress={() => setSelectedEmoji(emoji)}
+                >
+                  <Text style={styles.emojiText}>{emoji}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* Create Button */}
+          <TouchableOpacity
+            style={[
+              styles.createButton,
+              (creating || uploadingImage) && styles.createButtonDisabled,
+            ]}
+            onPress={createGroup}
+            disabled={creating || uploadingImage}
+            activeOpacity={0.8}
+          >
+            {creating || uploadingImage ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="checkmark-circle" size={24} color="#fff" />
+                <Text style={styles.createButtonText}>Create Group</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <View style={{ height: 40 }} />
+        </ScrollView>
       </LinearGradient>
-    </SafeAreaView>
+    </Container>
   );
 }
 
@@ -350,9 +394,21 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: BG,
+    ...(Platform.OS === 'web' && {
+      height: '100vh',
+      width: '100vw',
+      position: 'fixed',
+      top: 0,
+      left: 0,
+    }),
   },
   gradient: {
     flex: 1,
+    ...(Platform.OS === 'web' && {
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden',
+    }),
   },
   flex: {
     flex: 1,
@@ -365,6 +421,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#222',
+    ...(Platform.OS === 'web' && {
+      flexShrink: 0,
+    }),
   },
   backButton: {
     width: 40,
@@ -381,7 +440,14 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+    ...(Platform.OS === 'web' && {
+      overflow: 'auto',
+      maxHeight: '100%',
+    }),
+  },
+  scrollContent: {
     paddingHorizontal: 16,
+    paddingBottom: 100,
   },
   section: {
     marginTop: 24,
@@ -528,6 +594,10 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     marginTop: 32,
     gap: 8,
+    ...(Platform.OS === 'web' && {
+      cursor: 'pointer',
+      userSelect: 'none',
+    }),
   },
   createButtonDisabled: {
     opacity: 0.6,

@@ -16,9 +16,9 @@ export async function getOrCreateConversation(currentUserId, otherUserId) {
       conversationsRef,
       where('participants', 'array-contains', currentUserId)
     );
-    
+
     const snapshot = await getDocs(q);
-    
+
     // Find existing conversation with the other user
     for (const docSnap of snapshot.docs) {
       const participants = docSnap.data().participants;
@@ -31,7 +31,7 @@ export async function getOrCreateConversation(currentUserId, otherUserId) {
         return docSnap.id;
       }
     }
-    
+
     // Create new conversation if none exists
     const newConversationRef = doc(collection(db, 'conversations'));
     await setDoc(newConversationRef, {
@@ -44,7 +44,7 @@ export async function getOrCreateConversation(currentUserId, otherUserId) {
         [otherUserId]: 0,
       },
     });
-    
+
     return newConversationRef.id;
   } catch (error) {
     console.error('Error getting/creating conversation:', error);
@@ -64,16 +64,32 @@ export async function getOrCreateConversation(currentUserId, otherUserId) {
 export async function startConversation(currentUserId, otherUserId, otherUserData, navigation) {
   try {
     const conversationId = await getOrCreateConversation(currentUserId, otherUserId);
-    
+
+    // Build proper display name
+    let displayName = 'User';
+    if (otherUserData.firstName || otherUserData.lastName) {
+      const first = otherUserData.firstName || '';
+      const last = otherUserData.lastName || '';
+      displayName = `${first} ${last}`.trim();
+    } else if (otherUserData.username) {
+      displayName = otherUserData.username;
+    } else if (otherUserData.displayName) {
+      displayName = otherUserData.displayName;
+    } else if (otherUserData.name) {
+      displayName = otherUserData.name;
+    }
+
+    // Get username handle (not email)
+    const userHandle = otherUserData.username ? `@${otherUserData.username}` : '@user';
+
     navigation.navigate('Chat', {
-      user: {
-        name: otherUserData.username || otherUserData.name || 'User',
-        handle: otherUserData.email || '@user',
-        avatar: otherUserData.profilePicture ? { uri: otherUserData.profilePicture } : null,
-        userId: otherUserId,
-      },
       conversationId,
       otherUserId,
+      isGroup: false,
+      // Pass user info as separate params (not as object)
+      userName: displayName,
+      userHandle: userHandle,
+      userAvatar: otherUserData.profilePicture || otherUserData.profileImage || null,
     });
   } catch (error) {
     console.error('Error starting conversation:', error);

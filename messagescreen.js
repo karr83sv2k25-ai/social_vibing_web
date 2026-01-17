@@ -99,7 +99,7 @@ function Avatar({ name, size = 44, color = ACCENT, source }) {
   );
 
   // FIXED: Check if source exists AND has a valid uri
-  if (source && source.uri) {
+  if (source && source.uri && source.uri.trim()) {
     return (
       <Image
         source={source}
@@ -110,7 +110,17 @@ function Avatar({ name, size = 44, color = ACCENT, source }) {
           borderWidth: 1,
           borderColor: color + "88",
           backgroundColor: CARD,
-          resizeMode: "cover",
+          ...(Platform.OS === 'web' ? {
+            objectFit: 'cover',
+          } : {
+            resizeMode: 'cover',
+          }),
+        }}
+        onLoad={() => {
+          console.log('✅ Avatar image loaded:', source.uri);
+        }}
+        onError={(e) => {
+          console.log('❌ Avatar image failed to load:', source.uri, e.nativeEvent?.error);
         }}
       />
     );
@@ -128,7 +138,11 @@ function Avatar({ name, size = 44, color = ACCENT, source }) {
           borderWidth: 1,
           borderColor: color + "88",
           backgroundColor: CARD,
-          resizeMode: "cover",
+          ...(Platform.OS === 'web' ? {
+            objectFit: 'cover',
+          } : {
+            resizeMode: 'cover',
+          }),
         }}
       />
     );
@@ -502,6 +516,7 @@ export default function MessagesScreen({ navigation }) {
               userData.profilePicture ||
               userData.avatar ||
               userData.photoURL ||
+              userData.image ||
               null;
 
             const handle = userData.username ? `@${userData.username}` :
@@ -512,11 +527,26 @@ export default function MessagesScreen({ navigation }) {
               name: displayName,
               handle: handle,
               hasAvatar: !!avatarUri,
-              avatarUri: avatarUri
+              avatarUri: avatarUri,
+              avatarIsString: typeof avatarUri === 'string',
+              avatarLength: avatarUri?.length,
+              userId: doc.id
             });
 
-            // FIXED: Don't use { uri: null }, use fallback image directly
-            const avatar = avatarUri ? { uri: avatarUri } : null;
+            // FIXED: Ensure proper image source format with strict validation
+            let avatar = null;
+            if (avatarUri && typeof avatarUri === 'string' && avatarUri.trim().length > 0) {
+              const trimmedUri = avatarUri.trim();
+              // Check if it's a valid URL
+              if (trimmedUri.startsWith('http://') || trimmedUri.startsWith('https://')) {
+                avatar = { uri: trimmedUri };
+                console.log('✅ Valid avatar URL set:', trimmedUri);
+              } else {
+                console.log('⚠️ Invalid avatar URL (not http/https):', trimmedUri);
+              }
+            } else {
+              console.log('⚠️ No valid avatar URI found for user:', doc.id);
+            }
 
             users.push({
               id: doc.id,
@@ -691,21 +721,36 @@ export default function MessagesScreen({ navigation }) {
                   userData.profilePicture ||
                   userData.avatar ||
                   userData.photoURL ||
+                  userData.image ||
                   null;
 
                 const handle = userData.username ? `@${userData.username}` :
                   userData.handle ||
                   (userData.email ? `@${userData.email.split('@')[0]}` : '@user');
 
-                console.log('✅ Conversation built:', {
+                console.log('✅ Conversation user data:', {
                   name: displayName,
                   handle: handle,
                   avatarUri: avatarUri,
-                  hasAvatar: !!avatarUri
+                  hasAvatar: !!avatarUri,
+                  avatarIsString: typeof avatarUri === 'string',
+                  userId: otherUserId
                 });
 
-                // FIXED: Don't use { uri: null }, use null so Avatar component shows initials
-                const avatar = avatarUri ? { uri: avatarUri } : null;
+                // FIXED: Ensure proper image source format with strict validation
+                let avatar = null;
+                if (avatarUri && typeof avatarUri === 'string' && avatarUri.trim().length > 0) {
+                  const trimmedUri = avatarUri.trim();
+                  // Check if it's a valid URL
+                  if (trimmedUri.startsWith('http://') || trimmedUri.startsWith('https://')) {
+                    avatar = { uri: trimmedUri };
+                    console.log('✅ Valid conversation avatar URL set:', trimmedUri);
+                  } else {
+                    console.log('⚠️ Invalid avatar URL (not http/https):', trimmedUri);
+                  }
+                } else {
+                  console.log('⚠️ No valid avatar for conversation user:', otherUserId);
+                }
 
                 convos.push({
                   id: docSnap.id,
@@ -818,22 +863,17 @@ export default function MessagesScreen({ navigation }) {
   });
 
   const handleChatPress = async (item) => {
-    const useDesktopLayout = isWeb && isDesktopOrLarger();
-
-    // On desktop, open in split view
-    if (useDesktopLayout) {
-      setSelectedConversation(item);
-      return;
-    }
-
-    // On mobile, navigate to chat screen
+    // Navigate to chat screen
     // If conversation exists, navigate directly
     if (item.conversationId) {
       navigation.navigate("Chat", {
-        user: item,
         conversationId: item.conversationId,
         otherUserId: item.userId,
-        isGroup: item.isGroup || false  // Pass group flag
+        isGroup: item.isGroup || false,  // Pass group flag
+        // Pass minimal user info as separate params (not as object)
+        userName: item.name,
+        userHandle: item.handle,  // Pass handle (username), not email
+        userAvatar: item.avatar?.uri || null  // Extract URI from avatar object
       });
       return;
     }
@@ -844,10 +884,13 @@ export default function MessagesScreen({ navigation }) {
       const conversationId = await getOrCreateConversation(currentUser.uid, item.userId);
 
       navigation.navigate("Chat", {
-        user: item,
         conversationId: conversationId,
         otherUserId: item.userId,
-        isGroup: item.isGroup || false  // Pass group flag
+        isGroup: item.isGroup || false,  // Pass group flag
+        // Pass minimal user info as separate params (not as object)
+        userName: item.name,
+        userHandle: item.handle,  // Pass handle (username), not email
+        userAvatar: item.avatar?.uri || null  // Extract URI from avatar object
       });
     } catch (error) {
       console.error('Error creating conversation:', error);
@@ -918,16 +961,36 @@ export default function MessagesScreen({ navigation }) {
     );
   };
 
+  // Detect if we should show desktop layout
+  const useDesktopLayout = isWeb && isDesktopOrLarger();
+
   if (loading) {
     return (
       <SafeAreaView style={styles.safe}>
         <StatusBar barStyle="light-content" />
-        <View style={styles.header}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <Ionicons name="chatbubbles" size={22} color={CYAN} />
-            <Text style={styles.headerTitle}>Messages</Text>
+
+        {/* Desktop Header - Only show on desktop */}
+        {useDesktopLayout && (
+          <DesktopHeader
+            userProfile={userProfile}
+            onSearchPress={() => navigation?.navigate('SearchBar')}
+            onNotificationsPress={() => navigation?.navigate('Notification')}
+            onAddFriendsPress={() => navigation?.navigate('AddFriends')}
+            onSettingsPress={() => navigation?.navigate('Profile')}
+            onProfilePress={() => navigation?.navigate('Profile')}
+          />
+        )}
+
+        {/* Only show Messages header on mobile */}
+        {!useDesktopLayout && (
+          <View style={styles.header}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <Ionicons name="chatbubbles" size={22} color={CYAN} />
+              <Text style={styles.headerTitle}>Messages</Text>
+            </View>
           </View>
-        </View>
+        )}
+
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color={ACCENT} />
           <Text style={{ color: TEXT_DIM, marginTop: 10 }}>Loading messages...</Text>
@@ -936,232 +999,62 @@ export default function MessagesScreen({ navigation }) {
     );
   }
 
-  const useDesktopLayout = isWeb && isDesktopOrLarger();
-
-  // LinkedIn-style split view for desktop
-  if (useDesktopLayout) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <StatusBar barStyle="light-content" />
-
-        {/* Desktop Header */}
-        <DesktopHeader
-          userProfile={userProfile}
-          onSearchPress={() => navigation.navigate('SearchBar')}
-          onNotificationsPress={() => navigation.navigate('Notification')}
-          onSettingsPress={() => navigation.navigate('Profile')}
-          onProfilePress={() => navigation.navigate('Profile')}
-          navigation={navigation}
-        />
-
-        <View style={styles.splitContainer}>
-          {/* Left Panel - Conversation List */}
-          <View style={styles.conversationListPanel}>
-            <View style={styles.leftPanelHeader}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                <Ionicons name="chatbubbles" size={22} color={CYAN} />
-                <Text style={styles.headerTitle}>Messages</Text>
-              </View>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <TouchableOpacity
-                  style={styles.hIcon}
-                  onPress={handleOptionsPress}
-                >
-                  <Ionicons name="ellipsis-horizontal" size={20} color="#fff" />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* 🔍 Search Bar */}
-            <View style={styles.searchBox}>
-              <Ionicons name="search" size={18} color={TEXT_DIM} />
-              <TextInput
-                placeholder="Search people"
-                placeholderTextColor={TEXT_DIM}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                style={styles.input}
-              />
-            </View>
-
-            {/* 🔹 Segments */}
-            <View style={styles.segmentRow}>
-              <Chip
-                active={activeTab === 'private'}
-                icon="lock-closed"
-                label="Private"
-                onPress={() => setActiveTab('private')}
-              />
-              <Chip
-                active={activeTab === 'groups'}
-                icon="people"
-                label="Groups"
-                onPress={() => setActiveTab('groups')}
-              />
-            </View>
-
-            {/* Create Group Button */}
-            {activeTab === 'groups' && (
-              <View style={styles.createGroupContainer}>
-                <TouchableOpacity
-                  style={styles.createGroupButton}
-                  onPress={handleCreateGroup}
-                >
-                  <Ionicons name="add-circle" size={20} color={CYAN} />
-                  <Text style={styles.createGroupText}>Create New Group</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* 🧾 Messages List */}
-            <FlatList
-              data={filtered}
-              keyExtractor={(item) => item.conversationId || `user-${item.userId}` || item.id}
-              renderItem={({ item }) => {
-                const id = item.conversationId || item.userId;
-                const isPinned = pinnedConversations.includes(id);
-                const isMuted = mutedConversations.includes(id);
-                const isSelected = selectedConversation?.conversationId === item.conversationId ||
-                  selectedConversation?.userId === item.userId;
-
-                return (
-                  <TouchableOpacity
-                    activeOpacity={0.85}
-                    style={[
-                      styles.thread,
-                      isPinned && styles.pinnedThread,
-                      isSelected && styles.selectedThread
-                    ]}
-                    onPress={() => handleChatPress(item)}
-                    onLongPress={() => handleConversationLongPress(item)}
-                  >
-                    <View style={styles.avatarContainer}>
-                      <Avatar name={item.name} source={item.avatar} />
-                      {item.isGroup && (
-                        <View style={styles.groupBadge}>
-                          <Ionicons name="people" size={12} color="#fff" />
-                        </View>
-                      )}
-                    </View>
-                    <View style={{ flex: 1, marginLeft: 12 }}>
-                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                          {isPinned && <Ionicons name="pin" size={14} color={CYAN} />}
-                          <Text style={styles.name}>{item.name}</Text>
-                          {item.isGroup && (
-                            <MaterialCommunityIcons name="account-group" size={14} color={TEXT_DIM} />
-                          )}
-                          {isMuted && <Ionicons name="volume-mute" size={14} color={TEXT_DIM} />}
-                        </View>
-                        <Text style={styles.time}>{item.time}</Text>
-                      </View>
-                      <Text numberOfLines={1} style={styles.lastMsg}>
-                        {typeof item.last === 'object' ? item.last?.text || '' : item.last || ''}
-                      </Text>
-                    </View>
-
-                    {item.unread > 0 && (
-                      <View style={styles.badge}>
-                        <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>{item.unread}</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              }}
-              contentContainerStyle={{ paddingBottom: 20 }}
-              ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-              style={{ paddingHorizontal: 14 }}
-              ListEmptyComponent={() => (
-                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 50 }}>
-                  <Ionicons name="chatbubbles-outline" size={64} color={TEXT_DIM} />
-                  <Text style={{ color: TEXT_DIM, marginTop: 16, fontSize: 16 }}>
-                    No messages yet
-                  </Text>
-                  <Text style={{ color: TEXT_DIM, marginTop: 4, fontSize: 12 }}>
-                    Start a conversation!
-                  </Text>
-                </View>
-              )}
-            />
-          </View>
-
-          {/* Right Panel - Chat Detail */}
-          <View style={styles.chatDetailPanel}>
-            {selectedConversation ? (
-              <EnhancedChatScreenV2
-                route={{
-                  params: {
-                    conversationId: selectedConversation.conversationId,
-                    otherUserId: selectedConversation.userId,
-                    isGroup: selectedConversation.isGroup || false,
-                    groupName: selectedConversation.isGroup ? selectedConversation.name : undefined
-                  }
-                }}
-                navigation={navigation}
-              />
-            ) : (
-              <View style={styles.emptyChat}>
-                <Ionicons name="chatbubbles-outline" size={80} color={TEXT_DIM} />
-                <Text style={styles.emptyChatTitle}>Select a conversation</Text>
-                <Text style={styles.emptyChatSubtitle}>
-                  Choose a conversation from the list to start messaging
-                </Text>
-              </View>
-            )}
-          </View>
-        </View>
-
-        {/* Status Selector Modal */}
-        <StatusSelector
-          visible={statusSelectorVisible}
-          onClose={() => setStatusSelectorVisible(false)}
-          title="Update Your Status"
-        />
-      </SafeAreaView>
-    );
-  }
-
-  // Mobile view (original layout)
+  // Same layout for mobile and desktop
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="light-content" />
 
+      {/* Desktop Header - Only show on desktop */}
+      {useDesktopLayout && (
+        <DesktopHeader
+          userProfile={userProfile}
+          onSearchPress={() => navigation?.navigate('SearchBar')}
+          onNotificationsPress={() => navigation?.navigate('Notification')}
+          onAddFriendsPress={() => navigation?.navigate('AddFriends')}
+          onSettingsPress={() => navigation?.navigate('Profile')}
+          onProfilePress={() => navigation?.navigate('Profile')}
+        />
+      )}
+
       <View style={styles.contentContainer}>
         {/* ===== Header ===== */}
-        <View style={styles.header}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <Ionicons name="chatbubbles" size={22} color={CYAN} />
-            <Text style={styles.headerTitle}>Messages</Text>
-          </View>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            {/* User Status Badge - Click to edit */}
-            <StatusBadge
-              isOwnStatus={true}
-              size="medium"
-              showEditIcon={true}
-              onPress={() => setStatusSelectorVisible(true)}
-            />
+        {/* Only show Messages header on mobile, desktop has main nav header */}
+        {!useDesktopLayout && (
+          <View style={styles.header}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <Ionicons name="chatbubbles" size={22} color={CYAN} />
+              <Text style={styles.headerTitle}>Messages</Text>
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              {/* User Status Badge - Click to edit */}
+              <StatusBadge
+                isOwnStatus={true}
+                size="medium"
+                showEditIcon={true}
+                onPress={() => setStatusSelectorVisible(true)}
+              />
 
-            <TouchableOpacity
-              style={styles.hIcon}
-              onPress={handleNotificationPress}
-            >
-              <Ionicons name="notifications-outline" size={20} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.hIcon}
-              onPress={() => navigation.navigate('AddFriends')}
-            >
-              <Ionicons name="person-add-outline" size={20} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.hIcon}
-              onPress={handleOptionsPress}
-            >
-              <Ionicons name="ellipsis-horizontal" size={20} color="#fff" />
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.hIcon}
+                onPress={handleNotificationPress}
+              >
+                <Ionicons name="notifications-outline" size={20} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.hIcon}
+                onPress={() => navigation.navigate('AddFriends')}
+              >
+                <Ionicons name="person-add-outline" size={20} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.hIcon}
+                onPress={handleOptionsPress}
+              >
+                <Ionicons name="ellipsis-horizontal" size={20} color="#fff" />
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        )}
 
         {/* 🔍 Search Bar */}
         <View style={styles.searchBox}>
@@ -1328,14 +1221,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: BG,
     width: '100%',
+    ...(Platform.OS === 'web' && { height: '100vh' }),
   },
   contentContainer: {
     flex: 1,
     width: '100%',
+    ...(Platform.OS === 'web' && { height: '100%' }),
   },
   header: {
     paddingHorizontal: getResponsivePadding(24),
-    paddingTop: 46,
+    paddingTop: Platform.OS === 'web' ? 16 : 46,
     paddingBottom: 10,
     backgroundColor: BG,
     flexDirection: "row",
@@ -1381,6 +1276,7 @@ const styles = StyleSheet.create({
   },
   segmentRow: {
     flexDirection: "row",
+    flexWrap: 'wrap',
     gap: 8,
     paddingHorizontal: getResponsivePadding(14),
     paddingVertical: 12,
@@ -1395,12 +1291,14 @@ const styles = StyleSheet.create({
     backgroundColor: CARD,
     borderWidth: 1,
     borderColor: "#23232A",
+    flexShrink: 1,
     ...(isWeb && { cursor: 'pointer' }),
   },
   segmentText: {
     color: TEXT_DIM,
     fontSize: getResponsiveFontSize(12),
-    fontWeight: "600"
+    fontWeight: "600",
+    flexShrink: 1,
   },
   createGroupContainer: {
     paddingHorizontal: getResponsivePadding(14),

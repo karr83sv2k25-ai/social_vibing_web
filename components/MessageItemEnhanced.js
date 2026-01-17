@@ -4,7 +4,7 @@ import {
   View,
   Text,
   TouchableOpacity,
-  TouchableWithoutFeedback,
+  Pressable,
   StyleSheet,
   Image,
   Alert
@@ -41,7 +41,7 @@ export function MessageItem({
   }
 
   return (
-    <TouchableWithoutFeedback onLongPress={handleLongPress}>
+    <Pressable onLongPress={handleLongPress}>
       <View style={[
         styles.messageContainer,
         isOwnMessage ? styles.ownMessage : styles.otherMessage
@@ -164,7 +164,7 @@ export function MessageItem({
           </View>
         )}
       </View>
-    </TouchableWithoutFeedback>
+    </Pressable>
   );
 }
 

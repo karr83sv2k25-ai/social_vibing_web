@@ -18,7 +18,7 @@ import {
   Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { WebView } from 'react-native-webview';
+const WebView = Platform.OS !== 'web' ? require('react-native-webview').WebView : null;
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRoute, useNavigation } from '@react-navigation/native';
@@ -26,13 +26,13 @@ import { Video, ResizeMode } from 'expo-av';
 import * as ImagePicker from 'expo-image-picker';
 import { getAuth } from 'firebase/auth';
 import { uploadVideoToHostinger } from './hostingerConfig';
-import { 
-  
-  doc, 
-  getDoc, 
-  setDoc, 
-  updateDoc, 
-  arrayUnion, 
+import {
+
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  arrayUnion,
   onSnapshot,
   serverTimestamp,
   deleteDoc,
@@ -67,7 +67,7 @@ export default function ScreenSharingRoom() {
   const [videoTitle, setVideoTitle] = useState('');
   const videoRef = useRef(null);
   const [videoStatus, setVideoStatus] = useState({});
-  
+
   // Chat states
   const [showChat, setShowChat] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
@@ -83,12 +83,12 @@ export default function ScreenSharingRoom() {
 
         if (auth.currentUser) {
           const userId = auth.currentUser.uid;
-          
+
           // Get user data
           const userRef = doc(db, 'users', userId);
           const userSnap = await getDoc(userRef);
           const userData = userSnap.exists() ? userSnap.data() : {};
-          
+
           setCurrentUser({
             id: userId,
             name: userData.displayName || userData.name || auth.currentUser.displayName || 'User',
@@ -106,7 +106,7 @@ export default function ScreenSharingRoom() {
     };
 
     checkUserRole();
-    
+
     // Listen for dimension changes
     const subscription = Dimensions.addEventListener('change', ({ window }) => {
       const { width, height } = window;
@@ -124,7 +124,7 @@ export default function ScreenSharingRoom() {
       // Use existing roomId from params or create a new one
       const screenRoomId = existingRoomId || `screen_${communityId}_${Date.now()}`;
       const screenRoomRef = doc(db, 'screening_rooms', screenRoomId);
-      
+
       setRoomId(screenRoomId);
 
       const roomSnap = await getDoc(screenRoomRef);
@@ -181,15 +181,15 @@ export default function ScreenSharingRoom() {
             currentVideo: data.currentVideo?.title,
             playlistCount: data.playlist?.length
           });
-          
+
           setParticipants(data.participants || []);
           setScreenShareActive(data.sharingUserId !== null);
-          
+
           // Load playlist
           if (data.playlist) {
             setPlaylistVideos(data.playlist);
           }
-          
+
           // Load current video
           if (data.currentVideo) {
             console.log('Setting current video:', data.currentVideo.title);
@@ -221,7 +221,7 @@ export default function ScreenSharingRoom() {
         ...docSnap.data()
       }));
       setChatMessages(messages);
-      
+
       // Update unread count if chat is closed
       if (!showChat && messages.length > 0) {
         const lastMessage = messages[messages.length - 1];
@@ -229,7 +229,7 @@ export default function ScreenSharingRoom() {
           setUnreadCount(prev => prev + 1);
         }
       }
-      
+
       // Auto scroll to bottom
       setTimeout(() => {
         if (chatScrollRef.current && showChat) {
@@ -311,17 +311,17 @@ export default function ScreenSharingRoom() {
       if (!result.canceled && result.assets[0]) {
         const video = result.assets[0];
         console.log('Video picked:', video.uri);
-        
+
         // Show loading alert
         Alert.alert('Uploading Video', 'Please wait while the video is being uploaded...');
-        
+
         try {
           // Upload video to Hostinger so everyone can access it
           console.log('Uploading video to Hostinger...');
           const uploadedUrl = await uploadVideoToHostinger(video.uri, 'screening_room_videos');
-          
+
           console.log('Video uploaded successfully:', uploadedUrl);
-          
+
           // Add to playlist with the cloud URL
           const newVideo = {
             id: Date.now().toString(),
@@ -364,7 +364,7 @@ export default function ScreenSharingRoom() {
     // Validate YouTube URL
     const youtubeRegex = /^(https?\:\/\/)?(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/;
     const match = videoUrl.trim().match(youtubeRegex);
-    
+
     if (!match) {
       Alert.alert('Invalid URL', 'Please enter a valid YouTube video URL');
       return;
@@ -460,7 +460,7 @@ export default function ScreenSharingRoom() {
         if (currentIndex === -1) return;
 
         const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
-        
+
         if (newIndex < 0 || newIndex >= playlist.length) return;
 
         // Swap videos
@@ -484,7 +484,7 @@ export default function ScreenSharingRoom() {
 
     try {
       console.log('Playing video:', video.title, video.url);
-      
+
       // All videos now have URLs (either direct or uploaded to cloud)
       // db is now imported globally
       const screenRoomRef = doc(db, 'screening_rooms', roomId);
@@ -513,7 +513,7 @@ export default function ScreenSharingRoom() {
     try {
       // db is now imported globally
       const chatRef = collection(db, 'screening_rooms', roomId, 'chat');
-      
+
       await addDoc(chatRef, {
         text: chatInput.trim(),
         senderId: currentUser.id,
@@ -521,7 +521,7 @@ export default function ScreenSharingRoom() {
         senderImage: currentUser.profileImage,
         createdAt: serverTimestamp(),
       });
-      
+
       setChatInput('');
       Keyboard.dismiss();
     } catch (error) {
@@ -535,7 +535,7 @@ export default function ScreenSharingRoom() {
       Alert.alert('Creator Only', 'Only the room creator can stop videos');
       return;
     }
-    
+
     try {
       // db is now imported globally
       const screenRoomRef = doc(db, 'screening_rooms', roomId);
@@ -556,190 +556,217 @@ export default function ScreenSharingRoom() {
 
   // End session (admin only)
   const handleEndSession = () => {
-    Alert.alert(
-      'End Screening Room',
-      'Are you sure you want to end this screening room for everyone? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'End Session',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // db is now imported globally
-              const screenRoomRef = doc(db, 'screening_rooms', roomId);
-              
-              // Find and update the chat message in both community_chats and conversations
-              const updatePromises = [];
-              
-              // Check community_chats
-              const chatRef = collection(db, 'community_chats', communityId, 'messages');
-              const q = query(
-                chatRef,
-                where('type', '==', 'screeningRoom'),
-                where('roomId', '==', roomId)
-              );
-              const messagesSnap = await getDocs(q);
-              
-              messagesSnap.docs.forEach(msgDoc => {
-                updatePromises.push(
-                  updateDoc(doc(db, 'community_chats', communityId, 'messages', msgDoc.id), {
-                    isActive: false,
-                    closedAt: serverTimestamp(),
-                    closedBy: currentUser.id,
-                  })
-                );
-              });
-              
-              // Check conversations collection (one-on-one chat)
-              // Only check conversations where current user is a participant
-              const conversationsRef = collection(db, 'conversations');
-              const userConversationsQuery = query(
-                conversationsRef,
-                where('participants', 'array-contains', currentUser.id)
-              );
-              const conversationsSnapshot = await getDocs(userConversationsQuery);
-              
-              for (const convDoc of conversationsSnapshot.docs) {
-                const convMessagesRef = collection(db, 'conversations', convDoc.id, 'messages');
-                const convQuery = query(
-                  convMessagesRef,
-                  where('type', '==', 'screeningRoom'),
-                  where('roomId', '==', roomId)
-                );
-                const convSnapshot = await getDocs(convQuery);
-                
-                convSnapshot.docs.forEach(msgDoc => {
-                  updatePromises.push(
-                    updateDoc(doc(db, 'conversations', convDoc.id, 'messages', msgDoc.id), {
-                      isActive: false,
-                      closedAt: serverTimestamp(),
-                      closedBy: currentUser.id,
-                    }).catch(err => console.log('Error updating conversation message:', err))
-                  );
-                });
-              }
+    const confirmed = Platform.OS === 'web'
+      ? window.confirm('Are you sure you want to end this screening room for everyone? This action cannot be undone.')
+      : false;
 
-              // Update room status instead of deleting
-              updatePromises.push(
-                updateDoc(screenRoomRef, {
+    if (Platform.OS === 'web') {
+      if (confirmed) {
+        // Navigate immediately for better UX
+        navigation.goBack();
+
+        // Update in background
+        (async () => {
+          try {
+            const screenRoomRef = doc(db, 'screening_rooms', roomId);
+
+            // Just update the room status - let listeners handle the rest
+            await updateDoc(screenRoomRef, {
+              isActive: false,
+              closedAt: serverTimestamp(),
+              closedBy: currentUser.id,
+            });
+          } catch (error) {
+            console.error('Error ending session:', error);
+          }
+        })();
+      }
+    } else {
+      Alert.alert(
+        'End Screening Room',
+        'Are you sure you want to end this screening room for everyone? This action cannot be undone.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'End Session',
+            style: 'destructive',
+            onPress: async () => {
+              // Navigate immediately
+              navigation.goBack();
+
+              // Update in background
+              try {
+                const screenRoomRef = doc(db, 'screening_rooms', roomId);
+                await updateDoc(screenRoomRef, {
                   isActive: false,
                   closedAt: serverTimestamp(),
                   closedBy: currentUser.id,
-                }).catch(err => console.log('Error updating screening room:', err))
-              );
-              
-              // Wait for all operations to complete
-              await Promise.allSettled(updatePromises);
-              
-              Alert.alert('Session Ended', 'The screening room has been closed for all participants.');
-              navigation.goBack();
-            } catch (error) {
-              console.error('Error ending session:', error);
-              Alert.alert('Error', 'Failed to end session. Please try again.');
-            }
+                });
+              } catch (error) {
+                console.error('Error ending session:', error);
+              }
+            },
           },
-        },
-      ]
-    );
+        ]
+      );
+    }
   };
 
   const handleLeaveRoom = async () => {
     try {
       // db is now imported globally
       const screenRoomRef = doc(db, 'screening_rooms', roomId);
-      
+
       const roomSnap = await getDoc(screenRoomRef);
       if (roomSnap.exists()) {
         const data = roomSnap.data();
         const isCreator = data.createdBy === currentUser?.id;
-        
+
         if (isCreator) {
           // Creator leaving - offer to end session
-          Alert.alert(
-            'End Screening Room?',
-            'You are the creator of this screening room. Do you want to end it for everyone?',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Just Leave',
-                onPress: async () => {
-                  try {
-                    const updatedParticipants = (data.participants || []).filter(
-                      (p) => p.userId !== currentUser.id
-                    );
+          if (Platform.OS === 'web') {
+            const choice = window.confirm('You are the creator. Click OK to End Session for everyone, or Cancel to just leave.');
+            if (choice) {
+              handleEndSession();
+            } else {
+              try {
+                const updatedParticipants = (data.participants || []).filter(
+                  (p) => p.userId !== currentUser.id
+                );
+                if (updatedParticipants.length === 0) {
+                  await deleteDoc(screenRoomRef);
+                } else {
+                  await updateDoc(screenRoomRef, {
+                    participants: updatedParticipants,
+                    ...(data.sharingUserId === currentUser.id && {
+                      sharingUserId: null,
+                      sharingUserName: null,
+                      currentVideo: null,
+                    }),
+                  });
+                }
+                navigation.goBack();
+              } catch (e) {
+                console.log('Error leaving room:', e);
+                navigation.goBack();
+              }
+            }
+          } else {
+            Alert.alert(
+              'End Screening Room?',
+              'You are the creator of this screening room. Do you want to end it for everyone?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Just Leave',
+                  onPress: async () => {
+                    try {
+                      const updatedParticipants = (data.participants || []).filter(
+                        (p) => p.userId !== currentUser.id
+                      );
 
-                    if (updatedParticipants.length === 0) {
-                      // Delete room if no participants
-                      await deleteDoc(screenRoomRef);
-                    } else {
-                      // Remove user from participants
-                      await updateDoc(screenRoomRef, {
-                        participants: updatedParticipants,
-                        ...(data.sharingUserId === currentUser.id && {
-                          sharingUserId: null,
-                          sharingUserName: null,
-                          currentVideo: null,
-                        }),
-                      });
+                      if (updatedParticipants.length === 0) {
+                        // Delete room if no participants
+                        await deleteDoc(screenRoomRef);
+                      } else {
+                        // Remove user from participants
+                        await updateDoc(screenRoomRef, {
+                          participants: updatedParticipants,
+                          ...(data.sharingUserId === currentUser.id && {
+                            sharingUserId: null,
+                            sharingUserName: null,
+                            currentVideo: null,
+                          }),
+                        });
+                      }
+
+                      navigation.goBack();
+                    } catch (e) {
+                      console.log('Error leaving room:', e);
+                      navigation.goBack();
                     }
-                    
-                    navigation.goBack();
-                  } catch (e) {
-                    console.log('Error leaving room:', e);
-                    navigation.goBack();
-                  }
+                  },
                 },
-              },
-              {
-                text: 'End Session',
-                style: 'destructive',
-                onPress: () => {
-                  handleEndSession();
+                {
+                  text: 'End Session',
+                  style: 'destructive',
+                  onPress: () => {
+                    handleEndSession();
+                  },
                 },
-              },
-            ]
-          );
+              ]
+            );
+          }
         } else {
           // Regular participant leaving
-          Alert.alert(
-            'Leave Room',
-            'Are you sure you want to leave this screening room?',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Leave',
-                style: 'destructive',
-                onPress: async () => {
-                  try {
-                    const updatedParticipants = (data.participants || []).filter(
-                      (p) => p.userId !== currentUser.id
-                    );
+          const confirmed = Platform.OS === 'web'
+            ? window.confirm('Are you sure you want to leave this screening room?')
+            : false;
 
-                    if (updatedParticipants.length === 0) {
-                      // Delete room if no participants
-                      await deleteDoc(screenRoomRef);
-                    } else {
-                      // Remove user from participants
-                      await updateDoc(screenRoomRef, {
-                        participants: updatedParticipants,
-                        ...(data.sharingUserId === currentUser.id && {
-                          sharingUserId: null,
-                          sharingUserName: null,
-                          currentVideo: null,
-                        }),
-                      });
+          if (Platform.OS === 'web') {
+            if (confirmed) {
+              try {
+                const updatedParticipants = (data.participants || []).filter(
+                  (p) => p.userId !== currentUser.id
+                );
+                if (updatedParticipants.length === 0) {
+                  await deleteDoc(screenRoomRef);
+                } else {
+                  await updateDoc(screenRoomRef, {
+                    participants: updatedParticipants,
+                    ...(data.sharingUserId === currentUser.id && {
+                      sharingUserId: null,
+                      sharingUserName: null,
+                      currentVideo: null,
+                    }),
+                  });
+                }
+                navigation.goBack();
+              } catch (e) {
+                console.log('Error leaving room:', e);
+                navigation.goBack();
+              }
+            }
+          } else {
+            Alert.alert(
+              'Leave Room',
+              'Are you sure you want to leave this screening room?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Leave',
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      const updatedParticipants = (data.participants || []).filter(
+                        (p) => p.userId !== currentUser.id
+                      );
+
+                      if (updatedParticipants.length === 0) {
+                        // Delete room if no participants
+                        await deleteDoc(screenRoomRef);
+                      } else {
+                        // Remove user from participants
+                        await updateDoc(screenRoomRef, {
+                          participants: updatedParticipants,
+                          ...(data.sharingUserId === currentUser.id && {
+                            sharingUserId: null,
+                            sharingUserName: null,
+                            currentVideo: null,
+                          }),
+                        });
+                      }
+
+                      navigation.goBack();
+                    } catch (e) {
+                      console.log('Error leaving room:', e);
+                      navigation.goBack();
                     }
-                    
-                    navigation.goBack();
-                  } catch (e) {
-                    console.log('Error leaving room:', e);
-                    navigation.goBack();
-                  }
+                  },
                 },
-              },
-            ]
-          );
+              ]
+            );
+          }
         }
       } else {
         navigation.goBack();
@@ -752,7 +779,7 @@ export default function ScreenSharingRoom() {
 
   const renderParticipant = ({ item }) => {
     const isCurrentUser = item.userId === currentUser?.id;
-    
+
     return (
       <View style={styles.participantItem}>
         <View style={styles.participantAvatarContainer}>
@@ -813,11 +840,26 @@ export default function ScreenSharingRoom() {
         {(currentVideo && currentVideo.url) ? (
           <View style={styles.videoContainer}>
             {currentVideo.isYouTube ? (
-              // YouTube videos use WebView with HTML wrapper for better compatibility
-              <WebView
-                key={currentVideo.id}
-                source={{
-                  html: `
+              Platform.OS === 'web' ? (
+                // For web, use iframe directly
+                <iframe
+                  key={currentVideo.id}
+                  src={`https://www.youtube-nocookie.com/embed/${currentVideo.videoId}?autoplay=1&playsinline=1&controls=1&modestbranding=1&rel=0&fs=1&iv_load_policy=3`}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    border: 'none',
+                    backgroundColor: '#000'
+                  }}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                  allowFullScreen
+                />
+              ) : (
+                // For native, use WebView
+                WebView && <WebView
+                  key={currentVideo.id}
+                  source={{
+                    html: `
                     <!DOCTYPE html>
                     <html>
                       <head>
@@ -857,44 +899,46 @@ export default function ScreenSharingRoom() {
                       </body>
                     </html>
                   `,
-                  baseUrl: 'https://localhost'
-                }}
-                style={styles.video}
-                allowsFullscreenVideo={true}
-                allowsInlineMediaPlayback={true}
-                mediaPlaybackRequiresUserAction={false}
-                javaScriptEnabled={true}
-                domStorageEnabled={true}
-                thirdPartyCookiesEnabled={true}
-                sharedCookiesEnabled={true}
-                startInLoadingState={true}
-                scalesPageToFit={true}
-                mixedContentMode="always"
-                originWhitelist={['*']}
-                allowsProtectedMedia={true}
-                allowFileAccess={true}
-                allowUniversalAccessFromFileURLs={true}
-                cacheEnabled={true}
-                cacheMode="LOAD_DEFAULT"
-                renderLoading={() => (
-                  <View style={styles.loadingVideo}>
-                    <ActivityIndicator size="large" color="#667eea" />
-                    <Text style={styles.loadingText}>Loading video...</Text>
-                  </View>
-                )}
-                onError={(syntheticEvent) => {
-                  const { nativeEvent } = syntheticEvent;
-                  console.log('WebView error:', nativeEvent);
-                  Alert.alert('Video Error', 'Failed to load YouTube video. Error: ' + (nativeEvent.description || 'Unknown'));
-                }}
-                onHttpError={(syntheticEvent) => {
-                  const { nativeEvent } = syntheticEvent;
-                  console.log('HTTP error:', nativeEvent);
-                }}
-                onLoadEnd={() => {
-                  console.log('YouTube video loaded successfully');
-                }}
-              />
+                    baseUrl: 'https://localhost'
+                  }}
+                  style={styles.video}
+                  allowsFullscreenVideo={true}
+                  allowsInlineMediaPlayback={true}
+                  mediaPlaybackRequiresUserAction={false}
+                  javaScriptEnabled={true}
+                  domStorageEnabled={true}
+                  thirdPartyCookiesEnabled={true}
+                  sharedCookiesEnabled={true}
+                  startInLoadingState={true}
+                  scalesPageToFit={true}
+                  mixedContentMode="always"
+                  originWhitelist={['*']}
+                  allowsProtectedMedia={true}
+                  allowFileAccess={true}
+                  allowUniversalAccessFromFileURLs={true}
+                  cacheEnabled={true}
+                  cacheMode="LOAD_DEFAULT"
+                  renderLoading={() => (
+                    <View style={styles.loadingVideo}>
+                      <ActivityIndicator size="large" color="#667eea" />
+                      <Text style={styles.loadingText}>Loading video...</Text>
+                    </View>
+                  )}
+                  onError={(syntheticEvent) => {
+                    const { nativeEvent } = syntheticEvent;
+                    console.log('WebView error:', nativeEvent);
+                    Alert.alert('Video Error', 'Failed to load YouTube video. Error: ' + (nativeEvent.description || 'Unknown'));
+                  }}
+                  onHttpError={(syntheticEvent) => {
+                    const { nativeEvent } = syntheticEvent;
+                    console.log('HTTP error:', nativeEvent);
+                  }}
+                  onLoadEnd={() => {
+                    console.log('YouTube video loaded successfully');
+                  }}
+                  style={styles.webView}
+                />
+              )
             ) : (
               // Regular videos use Video component
               <Video
@@ -934,10 +978,10 @@ export default function ScreenSharingRoom() {
                 </Text>
                 {!currentVideo.isYouTube && (
                   <TouchableOpacity onPress={toggleFullscreen} style={styles.orientationButton}>
-                    <Ionicons 
-                      name={isFullscreen ? "contract" : "expand"} 
-                      size={20} 
-                      color="#fff" 
+                    <Ionicons
+                      name={isFullscreen ? "contract" : "expand"}
+                      size={20}
+                      color="#fff"
                     />
                   </TouchableOpacity>
                 )}
@@ -989,7 +1033,7 @@ export default function ScreenSharingRoom() {
             <Text style={styles.controlButtonText}>Playlist ({playlistVideos.length})</Text>
           </TouchableOpacity>
         )}
-        
+
         <TouchableOpacity
           style={styles.chatButton}
           onPress={() => setShowChat(!showChat)}
@@ -1001,7 +1045,7 @@ export default function ScreenSharingRoom() {
             </View>
           )}
         </TouchableOpacity>
-        
+
         {isAdmin && currentVideo ? (
           <TouchableOpacity
             style={styles.stopButton}
@@ -1056,10 +1100,10 @@ export default function ScreenSharingRoom() {
                     onPress={() => handlePlayVideo(video)}
                   >
                     <View style={styles.playlistItemIcon}>
-                      <MaterialCommunityIcons 
-                        name={currentVideo?.id === video.id ? "play-circle" : "play"} 
-                        size={24} 
-                        color={currentVideo?.id === video.id ? "#667eea" : "#999"} 
+                      <MaterialCommunityIcons
+                        name={currentVideo?.id === video.id ? "play-circle" : "play"}
+                        size={24}
+                        color={currentVideo?.id === video.id ? "#667eea" : "#999"}
                       />
                     </View>
                     <View style={styles.playlistItemContent}>
@@ -1072,7 +1116,7 @@ export default function ScreenSharingRoom() {
                     </View>
                     <Text style={styles.playlistItemNumber}>{index + 1}</Text>
                   </TouchableOpacity>
-                  
+
                   {isAdmin && (
                     <View style={styles.playlistControls}>
                       {/* Reorder Up */}
@@ -1084,7 +1128,7 @@ export default function ScreenSharingRoom() {
                           <Ionicons name="arrow-up" size={20} color="#4CAF50" />
                         </TouchableOpacity>
                       )}
-                      
+
                       {/* Reorder Down */}
                       {index < playlistVideos.length - 1 && (
                         <TouchableOpacity
@@ -1094,7 +1138,7 @@ export default function ScreenSharingRoom() {
                           <Ionicons name="arrow-down" size={20} color="#4CAF50" />
                         </TouchableOpacity>
                       )}
-                      
+
                       {/* Remove */}
                       <TouchableOpacity
                         style={styles.playlistControlButton}
@@ -1177,7 +1221,7 @@ export default function ScreenSharingRoom() {
                 autoCapitalize="none"
                 keyboardType="url"
               />
-              
+
               <View style={styles.helpTextContainer}>
                 <Ionicons name="information-circle-outline" size={16} color="#FF0000" />
                 <Text style={styles.helpText}>
@@ -1203,8 +1247,8 @@ export default function ScreenSharingRoom() {
                 <Ionicons name="close" size={24} color="#fff" />
               </TouchableOpacity>
             </View>
-            
-            <ScrollView 
+
+            <ScrollView
               ref={chatScrollRef}
               style={styles.chatMessages}
               contentContainerStyle={styles.chatMessagesContent}
@@ -1238,8 +1282,8 @@ export default function ScreenSharingRoom() {
                 );
               })}
             </ScrollView>
-            
-            <KeyboardAvoidingView 
+
+            <KeyboardAvoidingView
               behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
               keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
             >
@@ -1253,15 +1297,15 @@ export default function ScreenSharingRoom() {
                   multiline
                   maxLength={500}
                 />
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.chatSendButton}
                   onPress={sendChatMessage}
                   disabled={!chatInput.trim()}
                 >
-                  <Ionicons 
-                    name="send" 
-                    size={20} 
-                    color={chatInput.trim() ? '#FF00FF' : '#666'} 
+                  <Ionicons
+                    name="send"
+                    size={20}
+                    color={chatInput.trim() ? '#FF00FF' : '#666'}
                   />
                 </TouchableOpacity>
               </View>

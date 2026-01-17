@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Modal, Text, TouchableOpacity, Alert } from 'react-native';
+import { View, Modal, Text, TouchableOpacity, Alert, Platform, Dimensions } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
@@ -7,6 +7,7 @@ import HomeScreen from './homescreen';
 import CommunityScreen from './community';
 import MessageScreen from './messagescreen';
 import MarketPlaceScreen from './marketplace';
+import ProfileScreen from './profile';
 
 // Empty component for the Add button tab
 const EmptyComponent = () => null;
@@ -139,6 +140,9 @@ export default function BottomTabs() {
     </Modal>
   );
 
+  const windowWidth = Dimensions.get('window').width;
+  const isDesktop = windowWidth >= 768;
+
   return (
     <>
       <Tab.Navigator
@@ -147,26 +151,29 @@ export default function BottomTabs() {
           headerShown: false,
           tabBarHideOnKeyboard: false,
           tabBarStyle: {
-            display: 'none', // Hide the tab bar
+            display: isDesktop ? 'none' : 'flex', // Show on mobile, hide on desktop
             position: 'absolute',
-            bottom: 10,
-            left: 10,
-            right: 10,
-            height: 64,
-            borderRadius: 16,
-            backgroundColor: '#000', // black bar
-            borderTopWidth: 0,
-            paddingBottom: 8,
-            paddingTop: 8,
-            // Make sure tab bar is above other content
-            elevation: 20,
-            zIndex: 999,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 6 },
-            shadowOpacity: 0.3,
-            shadowRadius: 8,
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 60,
+            backgroundColor: '#0a0a0a',
+            borderTopWidth: 1,
+            borderTopColor: '#1a1a1a',
+            paddingBottom: Platform.OS === 'ios' ? 20 : 5,
+            paddingTop: 5,
+            elevation: 0,
+            shadowOpacity: 0,
           },
-          tabBarShowLabel: false,
+          tabBarShowLabel: true,
+          tabBarLabelStyle: {
+            fontSize: 11,
+            fontWeight: '500',
+            marginTop: -5,
+            marginBottom: 5,
+          },
+          tabBarActiveTintColor: '#08FFE2',
+          tabBarInactiveTintColor: '#888',
         }}
       >
         {/* 🏠 Home */}
@@ -174,100 +181,81 @@ export default function BottomTabs() {
           name="Home"
           component={HomeScreen}
           options={{
-            tabBarIcon: ({ focused }) => (
+            tabBarLabel: 'Home',
+            tabBarIcon: ({ focused, color }) => (
               <Ionicons
                 name={focused ? 'home' : 'home-outline'}
-                size={26}
-                color={focused ? '#08FFE2' : '#fff'}
+                size={24}
+                color={color}
               />
             ),
           }}
         />
 
-        {/* � Shop (Marketplace) */}
-        <Tab.Screen
-          name="Marketplace"
-          component={MarketPlaceScreen}
-          options={{
-            tabBarIcon: ({ focused }) => (
-              <Ionicons
-                name={focused ? 'cart' : 'cart-outline'}
-                size={26}
-                color={focused ? '#08FFE2' : '#fff'}
-              />
-            ),
-          }}
-        />
-
-        {/* ➕ Add Post */}
-        <Tab.Screen
-          name="AddPost"
-          component={EmptyComponent}
-          listeners={{
-            tabPress: (e) => {
-              e.preventDefault();
-              setShowAddOptions(true);
-            },
-          }}
-          options={{
-            tabBarIcon: ({ focused }) => (
-              <View style={{
-                width: 50,
-                height: 50,
-                backgroundColor: '#08FFE2',
-                borderRadius: 25,
-                justifyContent: 'center',
-                alignItems: 'center',
-                marginBottom: 20,
-                shadowColor: '#08FFE2',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.4,
-                shadowRadius: 4,
-                elevation: 4,
-              }}>
-                <Ionicons
-                  name="add"
-                  size={30}
-                  color="#000"
-                />
-              </View>
-            ),
-          }}
-        />
-
-
-
-        {/* 💬 Chat */}
-        <Tab.Screen
-          name="Message"
-          component={MessageScreen}
-          options={{
-            tabBarIcon: ({ focused }) => (
-              <Ionicons
-                name={focused ? 'chatbubble' : 'chatbubble-outline'}
-                size={26}
-                color={focused ? '#08FFE2' : '#fff'}
-              />
-            ),
-          }}
-        />
-
-        {/* � Community */}
+        {/* 👥 Community */}
         <Tab.Screen
           name="Community"
           component={CommunityScreen}
           options={{
-            tabBarIcon: ({ focused }) => (
+            tabBarLabel: 'Community',
+            tabBarIcon: ({ focused, color }) => (
               <Ionicons
                 name={focused ? 'people' : 'people-outline'}
-                size={26}
-                color={focused ? '#08FFE2' : '#fff'}
+                size={24}
+                color={color}
+              />
+            ),
+          }}
+        />
+
+        {/* 🛒 Market */}
+        <Tab.Screen
+          name="Marketplace"
+          component={MarketPlaceScreen}
+          options={{
+            tabBarLabel: 'Market',
+            tabBarIcon: ({ focused, color }) => (
+              <Ionicons
+                name={focused ? 'cart' : 'cart-outline'}
+                size={24}
+                color={color}
+              />
+            ),
+          }}
+        />
+
+        {/* 💬 Messages */}
+        <Tab.Screen
+          name="Message"
+          component={MessageScreen}
+          options={{
+            tabBarLabel: 'Messages',
+            tabBarIcon: ({ focused, color }) => (
+              <Ionicons
+                name={focused ? 'chatbubble' : 'chatbubble-outline'}
+                size={24}
+                color={color}
+              />
+            ),
+          }}
+        />
+
+        {/* 👤 Profile */}
+        <Tab.Screen
+          name="Profile"
+          component={ProfileScreen}
+          options={{
+            tabBarLabel: 'Profile',
+            tabBarIcon: ({ focused, color }) => (
+              <Ionicons
+                name={focused ? 'person' : 'person-outline'}
+                size={24}
+                color={color}
               />
             ),
           }}
         />
       </Tab.Navigator>
-      <AddOptionsModal />
     </>
   );
 }

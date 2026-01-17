@@ -8,7 +8,11 @@ import {
   ImageBackground,
   Alert,
   ActivityIndicator,
+  Platform,
+  Dimensions,
+  ScrollView,
 } from 'react-native';
+import { CommonActions } from '@react-navigation/native';
 import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
@@ -212,9 +216,46 @@ export default function LoginScreen({ navigation }) {
       setEmail('');
       setPassword('');
 
-      // Navigate to TabBar (bottom tabs) on successful login
-      console.log('🚀 Navigating to TabBar...');
-      navigation.replace('TabBar');
+      // Small delay to ensure state is fully updated
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Check if user has seen welcome screens
+      const hasSeenSplash = await AsyncStorage.getItem('hasSeenSplash');
+      console.log('👁️ hasSeenSplash value:', hasSeenSplash);
+      console.log('🌐 Platform:', Platform.OS);
+
+      // Navigate to welcome screens for first-time users, TabBar for returning users
+      if (hasSeenSplash === 'true') {
+        console.log('🚀 Returning user - navigating to TabBar');
+        if (Platform.OS === 'web') {
+          navigation.dispatch(
+            CommonActions.reset({
+              index: 0,
+              routes: [{ name: 'TabBar' }],
+            })
+          );
+          if (typeof window !== 'undefined') {
+            window.history.pushState({}, '', '/');
+          }
+        } else {
+          navigation.replace('TabBar');
+        }
+      } else {
+        console.log('🚀 First-time user - navigating to Welcome screens');
+        if (Platform.OS === 'web') {
+          navigation.dispatch(
+            CommonActions.reset({
+              index: 0,
+              routes: [{ name: 'Splash' }],
+            })
+          );
+          if (typeof window !== 'undefined') {
+            window.history.pushState({}, '', '/welcome');
+          }
+        } else {
+          navigation.replace('Splash');
+        }
+      }
     } catch (error) {
       console.error('❌ Login Error:', error);
 
@@ -228,19 +269,23 @@ export default function LoginScreen({ navigation }) {
       } else {
         switch (error.code) {
           case 'auth/invalid-email':
-            errorMessage = 'Invalid email address';
+            errorTitle = 'Invalid Email';
+            errorMessage = 'The email address you entered is not valid. Please check and try again.';
             break;
           case 'auth/user-disabled':
-            errorMessage = 'This account has been disabled';
+            errorMessage = 'This account has been disabled. Please contact support.';
             break;
           case 'auth/user-not-found':
-            errorMessage = 'No account found with this email';
+            errorTitle = 'Username Not Found';
+            errorMessage = 'No account exists with this email address. Please check your email or sign up for a new account.';
             break;
           case 'auth/wrong-password':
-            errorMessage = 'Incorrect password';
+            errorTitle = 'Wrong Password';
+            errorMessage = 'The password you entered is incorrect. Please try again or use "Forgot Password" to reset it.';
             break;
           case 'auth/invalid-credential':
-            errorMessage = 'Invalid email or password';
+            errorTitle = 'Invalid Credentials';
+            errorMessage = 'The email or password you entered is incorrect. Please check your credentials and try again.';
             break;
           case 'auth/network-request-failed':
             errorTitle = 'Network Error';
@@ -277,6 +322,10 @@ export default function LoginScreen({ navigation }) {
     navigation.goBack();
   };
 
+  const isWeb = Platform.OS === 'web';
+  const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+  const isDesktop = isWeb && screenWidth >= 768;
+
   return (
     <ImageBackground
       source={require('./assets/login_bg.png')}
@@ -286,94 +335,118 @@ export default function LoginScreen({ navigation }) {
       <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
 
       {/* 🔙 Back Button */}
-      <View style={styles.header}>
+      <View style={[styles.header, isDesktop && styles.headerDesktop]}>
         <TouchableOpacity style={styles.backButton} onPress={handleBack}>
           <Ionicons name="arrow-back" size={18} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
 
-      <View style={styles.container}>
-        {/* 🧾 Heading */}
-        <Text style={styles.heading}>Login</Text>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContainer, isDesktop && styles.scrollContainerDesktop]}
+        showsVerticalScrollIndicator={false}>
+        <View style={[styles.container, isDesktop && styles.containerDesktop]}>
+          {/* 🧾 Heading */}
+          <Text style={styles.heading}>Login</Text>
 
-        {/* Network Status Indicator */}
-        {!isConnected && (
-          <View style={styles.networkWarning}>
-            <Ionicons name="cloud-offline" size={20} color="#FF6B6B" />
-            <Text style={styles.networkWarningText}>No Internet Connection</Text>
-          </View>
-        )}
+          {/* Network Status Indicator */}
+          {!isConnected && (
+            <View style={styles.networkWarning}>
+              <Ionicons name="cloud-offline" size={20} color="#FF6B6B" />
+              <Text style={styles.networkWarningText}>No Internet Connection</Text>
+            </View>
+          )}
 
-        {/* 📧 Email */}
-        <TextInput
-          style={[styles.input, !isValidEmail && email && styles.invalidInput]}
-          placeholder="Email"
-          placeholderTextColor="#BDBDBD"
-          value={email}
-          onChangeText={validateEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
-
-        {/* 🔒 Password */}
-        <View style={styles.passwordContainer}>
+          {/* 📧 Email */}
           <TextInput
-            style={[styles.input, styles.passwordInput]}
-            placeholder="Password"
+            style={[styles.input, !isValidEmail && email && styles.invalidInput]}
+            placeholder="Email"
             placeholderTextColor="#BDBDBD"
-            secureTextEntry={hidePassword}
-            value={password}
-            onChangeText={setPassword}
-            returnKeyType="go"
-            onSubmitEditing={handleLogin}
+            value={email}
+            onChangeText={validateEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
           />
-          <TouchableOpacity
-            onPress={() => setHidePassword(!hidePassword)}
-            style={styles.iconButton}>
-            <Ionicons
-              name={hidePassword ? 'eye-off-outline' : 'eye-outline'}
-              size={20}
-              color="#FF06C8"
+
+          {/* 🔒 Password */}
+          <View style={styles.passwordContainer}>
+            <TextInput
+              style={[styles.input, styles.passwordInput]}
+              placeholder="Password"
+              placeholderTextColor="#BDBDBD"
+              secureTextEntry={hidePassword}
+              value={password}
+              onChangeText={setPassword}
+              returnKeyType="go"
+              onSubmitEditing={handleLogin}
             />
+            <TouchableOpacity
+              onPress={() => setHidePassword(!hidePassword)}
+              style={styles.iconButton}>
+              <Ionicons
+                name={hidePassword ? 'eye-off-outline' : 'eye-outline'}
+                size={20}
+                color="#FF06C8"
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* 🔗 Forgot Password */}
+          <TouchableOpacity style={styles.forgotPassword}>
+            <Text style={styles.forgotText}>Forgot Password?</Text>
+          </TouchableOpacity>
+
+          {/* 🚀 Login Button */}
+          <TouchableOpacity
+            onPress={handleLogin}
+            activeOpacity={0.8}
+            disabled={isLoading}
+          >
+            <LinearGradient
+              colors={['rgba(255, 6, 200, 0.4)', 'rgba(255, 6, 200, 0.1)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[styles.button, isLoading && styles.buttonDisabled]}>
+              {isLoading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.buttonText}>Login</Text>
+              )}
+            </LinearGradient>
           </TouchableOpacity>
         </View>
-
-        {/* 🔗 Forgot Password */}
-        <TouchableOpacity style={styles.forgotPassword}>
-          <Text style={styles.forgotText}>Forgot Password?</Text>
-        </TouchableOpacity>
-
-        {/* 🚀 Login Button */}
-        <TouchableOpacity
-          onPress={handleLogin}
-          activeOpacity={0.8}
-          disabled={isLoading}
-        >
-          <LinearGradient
-            colors={['rgba(255, 6, 200, 0.4)', 'rgba(255, 6, 200, 0.1)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={[styles.button, isLoading && styles.buttonDisabled]}>
-            {isLoading ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.buttonText}>Login</Text>
-            )}
-          </LinearGradient>
-        </TouchableOpacity>
-      </View>
+      </ScrollView>
     </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  background: { flex: 1, width: '100%', height: '100%' },
+  background: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000',
+  },
+
+  scrollContainer: {
+    flexGrow: 1,
+  },
+
+  scrollContainerDesktop: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: '100vh',
+  },
 
   header: {
     marginTop: 60,
     marginLeft: 30,
     position: 'absolute',
     zIndex: 10,
+  },
+
+  headerDesktop: {
+    marginTop: 30,
+    marginLeft: 40,
   },
 
   invalidInput: {
@@ -397,6 +470,16 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     alignItems: 'center',
     paddingHorizontal: 20,
+    width: '100%',
+  },
+
+  containerDesktop: {
+    maxWidth: 500,
+    marginTop: 40,
+    paddingHorizontal: 40,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 20,
+    paddingVertical: 40,
   },
 
   heading: {
@@ -408,7 +491,8 @@ const styles = StyleSheet.create({
   },
 
   input: {
-    width: 300,
+    width: '100%',
+    maxWidth: 300,
     height: 50,
     backgroundColor: 'rgba(52,42,66,0.4)',
     borderRadius: 6,
@@ -424,7 +508,8 @@ const styles = StyleSheet.create({
   passwordContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    width: 300,
+    width: '100%',
+    maxWidth: 300,
     height: 50,
     backgroundColor: 'rgba(52,42,66,0.4)',
     borderRadius: 6,
@@ -445,8 +530,9 @@ const styles = StyleSheet.create({
   },
 
   forgotPassword: {
-    alignSelf: 'flex-end',
-    width: 300,
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: 300,
     paddingHorizontal: 5,
     marginBottom: 25,
   },
@@ -455,11 +541,12 @@ const styles = StyleSheet.create({
     color: '#FF06C8',
     fontSize: 13,
     fontFamily: 'Manrope_500Medium',
-    textAlign: 'right',
+    textAlign: 'center',
   },
 
   button: {
-    width: 300,
+    width: '100%',
+    maxWidth: 300,
     height: 46,
     borderRadius: 12,
     borderWidth: 1,

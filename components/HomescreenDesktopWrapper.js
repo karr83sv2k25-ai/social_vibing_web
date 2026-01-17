@@ -40,7 +40,6 @@ export default function HomescreenDesktopWrapper({
                 onNotificationsPress={() => navigation?.navigate('Notification')}
                 onSettingsPress={() => navigation?.navigate('Profile')}
                 onProfilePress={() => navigation?.navigate('Profile')}
-                navigation={navigation}
             />
 
             {/* Three-column layout */}

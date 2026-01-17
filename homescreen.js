@@ -413,7 +413,7 @@ const Post = ({
                   styles.postVideoFull,
                   imageDimensions[`${post.id}-video`]
                     ? { aspectRatio: imageDimensions[`${post.id}-video`].aspectRatio }
-                    : { aspectRatio: 16 / 9 }
+                    : { aspectRatio: 9 / 16 }
                 ]}
                 useNativeControls={isVideoPlaying}
                 resizeMode="contain"
@@ -449,7 +449,7 @@ const Post = ({
                   activeOpacity={0.8}
                 >
                   <View style={styles.videoPlayButtonCircle}>
-                    <Ionicons name="play" size={40} color="#fff" style={{ marginLeft: 4 }} />
+                    <Ionicons name="play" size={36} color="#000" style={{ marginLeft: 4 }} />
                   </View>
                 </TouchableOpacity>
               )}
@@ -852,7 +852,8 @@ const HomeScreen = React.memo(({ navigation }) => {
             name: data.name || data.community_title || data.title || 'Community',
             description: data.description || data.community_description || '',
             category: data.category || data.community_category || '',
-            img: data.img || data.image || data.community_image || null,
+            profileImage: data.profileImage || data.img || data.image || data.community_image || null,
+            img: data.img || data.image || data.community_image || data.profileImage || null,
             memberCount,
             members: data.members || []
           });
@@ -3173,19 +3174,23 @@ const styles = StyleSheet.create({
   postImage: { height: 100, borderRadius: 10, resizeMode: 'contain' },
   postImageFull: {
     width: '100%',
-    aspectRatio: 1, // Use aspectRatio for responsive height
+    maxWidth: 500,
+    maxHeight: 500,
+    aspectRatio: 1,
     borderRadius: 12,
     marginBottom: 12,
     backgroundColor: '#000',
     overflow: 'hidden',
+    alignSelf: 'center',
   },
   postVideoFull: {
     width: '100%',
-    height: 'auto', // Set height to auto
-    minHeight: 300, // Ensure a minimum height
+    maxWidth: 500,
+    maxHeight: 500,
     borderRadius: 12,
-    marginBottom: 12,
     backgroundColor: '#000',
+    alignSelf: 'center',
+    overflow: 'hidden',
   },
   imageFallback: {
     backgroundColor: '#1a1a1a',
@@ -3217,8 +3222,10 @@ const styles = StyleSheet.create({
   globalPostImageWrapper: {
     position: 'relative',
     marginTop: 12,
+    marginBottom: 12,
     width: '100%',
-    minHeight: 300,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   videoPlayButton: {
     position: 'absolute',
@@ -3229,17 +3236,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 999,
-    pointerEvents: 'box-none',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
   },
   videoPlayButtonCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: 'rgba(8, 255, 226, 0.9)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 4,
-    borderColor: '#08FFE2',
     shadowColor: '#08FFE2',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.8,

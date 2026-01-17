@@ -21,11 +21,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { getAuth } from 'firebase/auth';
-import { 
-  doc, 
-  getDoc, 
-  updateDoc, 
-  arrayUnion, 
+import {
+  doc,
+  getDoc,
+  updateDoc,
+  arrayUnion,
   onSnapshot,
   serverTimestamp,
   deleteDoc,
@@ -65,7 +65,7 @@ export default function RoleplayScreen() {
   const [scenario, setScenario] = useState('');
   const [roles, setRoles] = useState([]);
   const [myRole, setMyRole] = useState(null);
-  
+
   // Chat states
   const [showChat, setShowChat] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
@@ -97,15 +97,15 @@ export default function RoleplayScreen() {
     const r = (rgb >> 16) & 0xff;
     const g = (rgb >> 8) & 0xff;
     const b = (rgb >> 0) & 0xff;
-    
+
     const rsRGB = r / 255;
     const gsRGB = g / 255;
     const bsRGB = b / 255;
-    
+
     const rLin = rsRGB <= 0.03928 ? rsRGB / 12.92 : Math.pow((rsRGB + 0.055) / 1.055, 2.4);
     const gLin = gsRGB <= 0.03928 ? gsRGB / 12.92 : Math.pow((gsRGB + 0.055) / 1.055, 2.4);
     const bLin = bsRGB <= 0.03928 ? bsRGB / 12.92 : Math.pow((bsRGB + 0.055) / 1.055, 2.4);
-    
+
     return 0.2126 * rLin + 0.7152 * gLin + 0.0722 * bLin;
   };
 
@@ -133,7 +133,11 @@ export default function RoleplayScreen() {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'We need gallery access to upload images');
+        if (Platform.OS === 'web') {
+          window.alert('Permission Denied: We need gallery access to upload images');
+        } else {
+          Alert.alert('Permission Denied', 'We need gallery access to upload images');
+        }
         return;
       }
 
@@ -153,44 +157,69 @@ export default function RoleplayScreen() {
 
           setCharacterImage(imageUrl);
           setUploadingImage(false);
-          Alert.alert('Success', 'Character image uploaded!');
+          if (Platform.OS === 'web') {
+            window.alert('Success: Character image uploaded!');
+          } else {
+            Alert.alert('Success', 'Character image uploaded!');
+          }
         } catch (error) {
           console.error('Error uploading image:', error);
           setUploadingImage(false);
-          Alert.alert('Upload Failed', 'Could not upload image. Please try again.');
+          if (Platform.OS === 'web') {
+            window.alert('Upload Failed: Could not upload image. Please try again.');
+          } else {
+            Alert.alert('Upload Failed', 'Could not upload image. Please try again.');
+          }
         }
       }
     } catch (error) {
       console.error('Error picking image:', error);
       setUploadingImage(false);
-      Alert.alert('Error', 'Failed to pick image: ' + error.message);
+      if (Platform.OS === 'web') {
+        window.alert('Error: Failed to pick image: ' + error.message);
+      } else {
+        Alert.alert('Error', 'Failed to pick image: ' + error.message);
+      }
     }
   };
 
   // Handle AI generation
   const handleAIGeneration = () => {
     setShowImageOptions(false);
-    
-    Alert.alert(
-      'AI Image Generation',
-      'Generate custom character art with AI. This is a premium feature available in the marketplace.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Go to Marketplace',
-          onPress: () => {
-            navigation.navigate('Marketplace', {
-              screen: 'AIImageGenerator',
-              params: {
-                returnTo: 'RoleplayScreen',
-                characterId: myCharacterId,
-                purpose: 'character_image'
-              }
-            });
+
+    if (Platform.OS === 'web') {
+      if (window.confirm('Generate custom character art with AI. This is a premium feature available in the marketplace.\n\nGo to Marketplace?')) {
+        navigation.navigate('Marketplace', {
+          screen: 'AIImageGenerator',
+          params: {
+            returnTo: 'RoleplayScreen',
+            characterId: myCharacterId,
+            purpose: 'character_image'
           }
-        }
-      ]
-    );
+        });
+      }
+    } else {
+      Alert.alert(
+        'AI Image Generation',
+        'Generate custom character art with AI. This is a premium feature available in the marketplace.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Go to Marketplace',
+            onPress: () => {
+              navigation.navigate('Marketplace', {
+                screen: 'AIImageGenerator',
+                params: {
+                  returnTo: 'RoleplayScreen',
+                  characterId: myCharacterId,
+                  purpose: 'character_image'
+                }
+              });
+            }
+          }
+        ]
+      );
+    }
   };
 
   // Select existing character for this session
@@ -221,11 +250,11 @@ export default function RoleplayScreen() {
       // Update session document with character info
       const sessionRef = doc(db, 'roleplay_sessions', communityId, 'sessions', sessionId);
       const sessionSnap = await getDoc(sessionRef);
-      
+
       if (sessionSnap.exists()) {
         const sessionData = sessionSnap.data();
         const existingChars = sessionData.characters || [];
-        
+
         // Update or add character to session
         const charIndex = existingChars.findIndex(c => c.ownerId === currentUser.id);
         const charSessionData = {
@@ -236,13 +265,13 @@ export default function RoleplayScreen() {
           themeColor: character.frameColor || '#FFD700',
           description: character.description || '',
         };
-        
+
         if (charIndex >= 0) {
           existingChars[charIndex] = charSessionData;
         } else {
           existingChars.push(charSessionData);
         }
-        
+
         await updateDoc(sessionRef, {
           characters: existingChars,
           updatedAt: serverTimestamp(),
@@ -255,7 +284,7 @@ export default function RoleplayScreen() {
       setCharacterImage(character.imageUrl);
       setFrameColor(character.frameColor || '#FFD700');
       setTextColor(character.textColor || '#1F2937');
-      
+
       // Update participantCharacters state immediately
       setParticipantCharacters(prev => ({
         ...prev,
@@ -268,24 +297,36 @@ export default function RoleplayScreen() {
           description: character.description || '',
         }
       }));
-      
+
       setShowCharacterSelector(false);
-      
-      Alert.alert(
-        'Character Selected!', 
-        `You'll enter the roleplay as "${character.name}". Your character's details will be visible to other participants.`,
-        [{ text: 'Enter Roleplay', onPress: () => {} }]
-      );
+
+      if (Platform.OS === 'web') {
+        window.alert(`Character Selected!\n\nYou'll enter the roleplay as "${character.name}". Your character's details will be visible to other participants.`);
+      } else {
+        Alert.alert(
+          'Character Selected!',
+          `You'll enter the roleplay as "${character.name}". Your character's details will be visible to other participants.`,
+          [{ text: 'Enter Roleplay', onPress: () => { } }]
+        );
+      }
     } catch (error) {
       console.error('Error selecting character:', error);
-      Alert.alert('Error', 'Failed to select character');
+      if (Platform.OS === 'web') {
+        window.alert('Error: Failed to select character');
+      } else {
+        Alert.alert('Error', 'Failed to select character');
+      }
     }
   };
 
   // Save character customization
   const saveCharacterCustomization = async () => {
     if (!characterName.trim()) {
-      Alert.alert('Error', 'Please enter a character name');
+      if (Platform.OS === 'web') {
+        window.alert('Error: Please enter a character name');
+      } else {
+        Alert.alert('Error', 'Please enter a character name');
+      }
       return;
     }
 
@@ -317,11 +358,11 @@ export default function RoleplayScreen() {
       // Update session document with character info
       const sessionRef = doc(db, 'roleplay_sessions', communityId, 'sessions', sessionId);
       const sessionSnap = await getDoc(sessionRef);
-      
+
       if (sessionSnap.exists()) {
         const sessionData = sessionSnap.data();
         const existingChars = sessionData.characters || [];
-        
+
         // Update or add character to session
         const charIndex = existingChars.findIndex(c => c.ownerId === currentUser.id);
         const charSessionData = {
@@ -332,13 +373,13 @@ export default function RoleplayScreen() {
           themeColor: frameColor,
           description: characterDescription.trim(),
         };
-        
+
         if (charIndex >= 0) {
           existingChars[charIndex] = charSessionData;
         } else {
           existingChars.push(charSessionData);
         }
-        
+
         await updateDoc(sessionRef, {
           characters: existingChars,
           updatedAt: serverTimestamp(),
@@ -346,7 +387,7 @@ export default function RoleplayScreen() {
       }
 
       setMyCharacterId(characterId);
-      
+
       // Update participantCharacters state immediately
       setParticipantCharacters(prev => ({
         ...prev,
@@ -359,17 +400,25 @@ export default function RoleplayScreen() {
           description: characterDescription.trim(),
         }
       }));
-      
+
       setShowCharacterCustomization(false);
-      
-      Alert.alert(
-        'Character Created!', 
-        `"${characterName}" is ready for roleplay! You'll now appear with this character's details in the roleplay session.`,
-        [{ text: 'Enter Roleplay', onPress: () => {} }]
-      );
+
+      if (Platform.OS === 'web') {
+        window.alert(`Character Created!\n\n"${characterName}" is ready for roleplay! You'll now appear with this character's details in the roleplay session.`);
+      } else {
+        Alert.alert(
+          'Character Created!',
+          `"${characterName}" is ready for roleplay! You'll now appear with this character's details in the roleplay session.`,
+          [{ text: 'Enter Roleplay', onPress: () => { } }]
+        );
+      }
     } catch (error) {
       console.error('Error saving character:', error);
-      Alert.alert('Error', 'Failed to save character customization');
+      if (Platform.OS === 'web') {
+        window.alert('Error: Failed to save character customization');
+      } else {
+        Alert.alert('Error', 'Failed to save character customization');
+      }
     }
   };
 
@@ -385,13 +434,13 @@ export default function RoleplayScreen() {
           charsRef,
           where('userId', '==', currentUser.id)
         );
-        
+
         const snapshot = await getDocs(q);
         const chars = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }));
-        
+
         setExistingCharacters(chars);
         setLoadingCharacters(false);
       } catch (error) {
@@ -412,22 +461,22 @@ export default function RoleplayScreen() {
         // First, check if user has characters from the session (from character collection)
         const sessionRef = doc(db, 'roleplay_sessions', communityId, 'sessions', sessionId);
         const sessionSnap = await getDoc(sessionRef);
-        
+
         if (sessionSnap.exists()) {
           const sessionData = sessionSnap.data();
-          
+
           // Find user's participant data which should have their selected characters
           const userParticipant = sessionData.participants?.find(p => p.userId === currentUser.id);
-          
+
           if (userParticipant && userParticipant.characters && userParticipant.characters.length > 0) {
             // User has selected characters from character collection
             // Use the first character as the active character
             const characterIds = userParticipant.characters;
             const sessionCharacters = sessionData.characters || [];
-            const userCharacter = sessionCharacters.find(char => 
+            const userCharacter = sessionCharacters.find(char =>
               characterIds.includes(char.id) && char.ownerId === currentUser.id
             );
-            
+
             if (userCharacter) {
               setCharacterName(userCharacter.name || currentUser.name);
               setCharacterDescription(userCharacter.description || '');
@@ -435,11 +484,25 @@ export default function RoleplayScreen() {
               setFrameColor(userCharacter.themeColor || '#A855F7');
               setTextColor('#FFFFFF');
               setMyCharacterId(userCharacter.id);
+
+              // Update participantCharacters state immediately
+              setParticipantCharacters(prev => ({
+                ...prev,
+                [currentUser.id]: {
+                  id: userCharacter.id,
+                  name: userCharacter.name,
+                  imageUrl: userCharacter.avatar,
+                  frameColor: userCharacter.themeColor || '#A855F7',
+                  textColor: '#FFFFFF',
+                  description: userCharacter.description || '',
+                }
+              }));
+
               return; // Exit early, we found the character
             }
           }
         }
-        
+
         // Fallback: Check roleplay_characters collection
         const charsRef = collection(db, 'roleplay_characters');
         const q = query(
@@ -447,13 +510,13 @@ export default function RoleplayScreen() {
           where('userId', '==', currentUser.id),
           where('sessionId', '==', sessionId)
         );
-        
+
         const snapshot = await getDocs(q);
-        
+
         if (!snapshot.empty) {
           const charData = snapshot.docs[0].data();
           const charId = snapshot.docs[0].id;
-          
+
           setMyCharacterId(charId);
           setCharacterName(charData.name || '');
           setCharacterDescription(charData.description || '');
@@ -468,7 +531,7 @@ export default function RoleplayScreen() {
           setCharacterImage(null);
           setFrameColor('#A855F7');
           setTextColor('#FFFFFF');
-          
+
           // ALWAYS show character selector modal when joining a roleplay
           // User must choose: existing character or create new one
           setTimeout(() => {
@@ -492,20 +555,20 @@ export default function RoleplayScreen() {
         // First, get characters from the session data
         const sessionRef = doc(db, 'roleplay_sessions', communityId, 'sessions', sessionId);
         const sessionSnap = await getDoc(sessionRef);
-        
+
         const chars = {};
-        
+
         if (sessionSnap.exists()) {
           const sessionData = sessionSnap.data();
           const sessionCharacters = sessionData.characters || [];
-          
+
           // Map session characters to participants
           participants.forEach((participant) => {
             // Find character for this participant from session.characters array
-            const participantCharacter = sessionCharacters.find(char => 
+            const participantCharacter = sessionCharacters.find(char =>
               char.ownerId === participant.userId
             );
-            
+
             if (participantCharacter) {
               chars[participant.userId] = {
                 id: participantCharacter.id,
@@ -519,16 +582,16 @@ export default function RoleplayScreen() {
             }
           });
         }
-        
+
         // Also check roleplay_characters collection for any custom characters
         const charsRef = collection(db, 'roleplay_characters');
         const q = query(
           charsRef,
           where('sessionId', '==', sessionId)
         );
-        
+
         const snapshot = await getDocs(q);
-        
+
         snapshot.forEach((doc) => {
           const data = doc.data();
           // Only add if not already added from session data
@@ -539,7 +602,7 @@ export default function RoleplayScreen() {
             };
           }
         });
-        
+
         setParticipantCharacters(chars);
       } catch (error) {
         console.error('Error loading participant characters:', error);
@@ -558,18 +621,18 @@ export default function RoleplayScreen() {
 
         if (auth.currentUser) {
           const userId = auth.currentUser.uid;
-          
+
           // Get user data
           const userRef = doc(db, 'users', userId);
           const userSnap = await getDoc(userRef);
           const userData = userSnap.exists() ? userSnap.data() : {};
-          
+
           const user = {
             id: userId,
             name: userData.displayName || userData.name || auth.currentUser.displayName || 'User',
             profileImage: userData.profileImage || userData.avatar || null,
           };
-          
+
           setCurrentUser(user);
 
           // Get roleplay session data
@@ -593,8 +656,8 @@ export default function RoleplayScreen() {
               setMyRole(userParticipant.role);
             } else if (selectedRole) {
               // User just joined, add them
-              const updatedRoles = sessionData.roles.map(r => 
-                r.id === selectedRole.id 
+              const updatedRoles = sessionData.roles.map(r =>
+                r.id === selectedRole.id
                   ? { ...r, taken: true, takenBy: userId, takenByName: user.name }
                   : r
               );
@@ -671,7 +734,7 @@ export default function RoleplayScreen() {
         };
       });
       setChatMessages(messages);
-      
+
       // Update unread count if chat is closed
       if (!showChat && messages.length > 0) {
         const lastMessage = messages[messages.length - 1];
@@ -679,7 +742,7 @@ export default function RoleplayScreen() {
           setUnreadCount(prev => prev + 1);
         }
       }
-      
+
       // Auto scroll to bottom
       setTimeout(() => {
         if (chatScrollRef.current && showChat) {
@@ -707,14 +770,14 @@ export default function RoleplayScreen() {
     try {
       // db is now imported globally
       const chatRef = collection(db, 'roleplay_sessions', communityId, 'sessions', sessionId, 'chat');
-      
+
       // Get current character data from participantCharacters
       const currentCharacter = participantCharacters[currentUser.id];
       const charImage = currentCharacter?.imageUrl || characterImage || currentUser.profileImage || null;
       const charName = currentCharacter?.name || characterName || currentUser.name || 'User';
       const charFrame = currentCharacter?.frameColor || frameColor || '#A855F7';
       const charText = currentCharacter?.textColor || textColor || '#FFFFFF';
-      
+
       // Build message data without undefined values
       const messageData = {
         text: chatInput.trim(),
@@ -729,19 +792,45 @@ export default function RoleplayScreen() {
       // Only add optional fields if they have values
       if (myRole) messageData.senderRole = myRole;
       if (myCharacterId) messageData.characterId = myCharacterId;
-      
+
       await addDoc(chatRef, messageData);
-      
+
       setChatInput('');
       Keyboard.dismiss();
     } catch (error) {
       console.log('Error sending message:', error);
-      Alert.alert('Error', 'Failed to send message');
+      if (Platform.OS === 'web') {
+        window.alert('Error: Failed to send message');
+      } else {
+        Alert.alert('Error', 'Failed to send message');
+      }
     }
   };
 
   // End session (creator only)
   const handleEndSession = () => {
+    if (Platform.OS === 'web') {
+      if (!window.confirm('Are you sure you want to end this roleplay session for everyone? This action cannot be undone.')) {
+        return;
+      }
+      // Navigate immediately
+      navigation.goBack();
+      // Update in background
+      (async () => {
+        try {
+          const sessionRef = doc(db, 'roleplay_sessions', communityId, 'sessions', sessionId);
+          await updateDoc(sessionRef, {
+            isActive: false,
+            closedAt: serverTimestamp(),
+            closedBy: currentUser.id,
+          });
+        } catch (error) {
+          console.error('Error ending session:', error);
+        }
+      })();
+      return;
+    }
+
     Alert.alert(
       'End Roleplay Session',
       'Are you sure you want to end this roleplay session for everyone? This action cannot be undone.',
@@ -754,7 +843,7 @@ export default function RoleplayScreen() {
             try {
               // db is now imported globally
               const sessionRef = doc(db, 'roleplay_sessions', communityId, 'sessions', sessionId);
-              
+
               // Find and update the chat message efficiently
               const chatRef = collection(db, 'community_chats', communityId, 'messages');
               const q = query(
@@ -763,7 +852,7 @@ export default function RoleplayScreen() {
                 where('sessionId', '==', sessionId)
               );
               const messagesSnap = await getDocs(q);
-              
+
               // Update chat messages and delete session in parallel
               const updatePromises = messagesSnap.docs.map(msgDoc =>
                 updateDoc(doc(db, 'community_chats', communityId, 'messages', msgDoc.id), {
@@ -778,12 +867,12 @@ export default function RoleplayScreen() {
                 ...updatePromises,
                 deleteDoc(sessionRef)
               ]);
-              
-              Alert.alert('Session Ended', 'The roleplay session has been closed for all participants.');
+
+              // Navigate immediately
               navigation.goBack();
             } catch (error) {
               console.error('Error ending session:', error);
-              Alert.alert('Error', 'Failed to end session. Please try again.');
+              Alert.alert('Error', 'Failed to end session. Please try again');
             }
           },
         },
@@ -797,13 +886,49 @@ export default function RoleplayScreen() {
       // Check if user is the creator
       const sessionRef = doc(db, 'roleplay_sessions', communityId, 'sessions', sessionId);
       const sessionSnap = await getDoc(sessionRef);
-      
+
       if (sessionSnap.exists()) {
         const data = sessionSnap.data();
         const isCreator = data.createdBy === currentUser?.id;
-        
+
         if (isCreator) {
           // Creator leaving - offer to end session
+          if (Platform.OS === 'web') {
+            const choice = window.confirm('You are the creator of this roleplay session. Do you want to end it for everyone?\n\nOK = End Session\nCancel = Just Leave');
+            if (choice) {
+              handleEndSession();
+            } else {
+              // Just leave logic
+              try {
+                const updatedParticipants = (data.participants || []).filter(
+                  p => p.userId !== currentUser.id
+                );
+                const updatedRoles = (data.roles || []).map(r =>
+                  r.takenBy === currentUser.id
+                    ? { ...r, taken: false, takenBy: null, takenByName: null }
+                    : r
+                );
+                if (updatedParticipants.length === 0) {
+                  await deleteDoc(sessionRef);
+                } else {
+                  const updateData = {
+                    participants: updatedParticipants,
+                    updatedAt: serverTimestamp(),
+                  };
+                  if (data.roles && data.roles.length > 0) {
+                    updateData.roles = updatedRoles;
+                  }
+                  await updateDoc(sessionRef, updateData);
+                }
+                navigation.goBack();
+              } catch (error) {
+                console.error('Error leaving roleplay:', error);
+                window.alert('Error: Failed to leave roleplay session');
+              }
+            }
+            return;
+          }
+
           Alert.alert(
             'End Roleplay Session?',
             'You are the creator of this roleplay session. Do you want to end it for everyone?',
@@ -818,7 +943,7 @@ export default function RoleplayScreen() {
                     );
 
                     // Mark role as available again (only if roles exist)
-                    const updatedRoles = (data.roles || []).map(r => 
+                    const updatedRoles = (data.roles || []).map(r =>
                       r.takenBy === currentUser.id
                         ? { ...r, taken: false, takenBy: null, takenByName: null }
                         : r
@@ -831,19 +956,23 @@ export default function RoleplayScreen() {
                         participants: updatedParticipants,
                         updatedAt: serverTimestamp(),
                       };
-                      
+
                       // Only update roles if they exist
                       if (data.roles && data.roles.length > 0) {
                         updateData.roles = updatedRoles;
                       }
-                      
+
                       await updateDoc(sessionRef, updateData);
                     }
-                    
+
                     navigation.goBack();
                   } catch (error) {
                     console.log('Error leaving roleplay:', error);
-                    Alert.alert('Error', 'Failed to leave roleplay session');
+                    if (Platform.OS === 'web') {
+                      window.alert('Error: Failed to leave roleplay session');
+                    } else {
+                      Alert.alert('Error', 'Failed to leave roleplay session');
+                    }
                   }
                 },
               },
@@ -858,6 +987,39 @@ export default function RoleplayScreen() {
           )
         } else {
           // Regular participant leaving
+          if (Platform.OS === 'web') {
+            if (!window.confirm('Are you sure you want to leave this roleplay session?')) {
+              return;
+            }
+            try {
+              const updatedParticipants = (data.participants || []).filter(
+                p => p.userId !== currentUser.id
+              );
+              const updatedRoles = (data.roles || []).map(r =>
+                r.takenBy === currentUser.id
+                  ? { ...r, taken: false, takenBy: null, takenByName: null }
+                  : r
+              );
+              if (updatedParticipants.length === 0) {
+                await deleteDoc(sessionRef);
+              } else {
+                const updateData = {
+                  participants: updatedParticipants,
+                  updatedAt: serverTimestamp(),
+                };
+                if (data.roles && data.roles.length > 0) {
+                  updateData.roles = updatedRoles;
+                }
+                await updateDoc(sessionRef, updateData);
+              }
+              navigation.goBack();
+            } catch (error) {
+              console.error('Error leaving roleplay:', error);
+              window.alert('Error: Failed to leave roleplay session');
+            }
+            return;
+          }
+
           Alert.alert(
             'Leave Roleplay',
             'Are you sure you want to leave this roleplay session?',
@@ -873,7 +1035,7 @@ export default function RoleplayScreen() {
                     );
 
                     // Mark role as available again (only if roles exist)
-                    const updatedRoles = (data.roles || []).map(r => 
+                    const updatedRoles = (data.roles || []).map(r =>
                       r.takenBy === currentUser.id
                         ? { ...r, taken: false, takenBy: null, takenByName: null }
                         : r
@@ -886,19 +1048,23 @@ export default function RoleplayScreen() {
                         participants: updatedParticipants,
                         updatedAt: serverTimestamp(),
                       };
-                      
+
                       // Only update roles if they exist
                       if (data.roles && data.roles.length > 0) {
                         updateData.roles = updatedRoles;
                       }
-                      
+
                       await updateDoc(sessionRef, updateData);
                     }
-                    
+
                     navigation.goBack();
                   } catch (error) {
                     console.log('Error leaving roleplay:', error);
-                    Alert.alert('Error', 'Failed to leave roleplay session');
+                    if (Platform.OS === 'web') {
+                      window.alert('Error: Failed to leave roleplay session');
+                    } else {
+                      Alert.alert('Error', 'Failed to leave roleplay session');
+                    }
                   }
                 },
               },
@@ -944,7 +1110,7 @@ export default function RoleplayScreen() {
                 )}
               </View>
             </View>
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={() => {
                 // Navigate back to groupinfo with switch character flag
                 navigation.navigate('GroupInfo', {
@@ -965,66 +1131,66 @@ export default function RoleplayScreen() {
         <View style={styles.mainStageContainer}>
           {/* Horizontal Participants Layout Above Play Button */}
           <View style={styles.horizontalParticipantsContainer}>
-            <ScrollView 
-              horizontal 
+            <ScrollView
+              horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.horizontalParticipantsContent}
             >
               {participants
-                .filter((participant, index, self) => 
+                .filter((participant, index, self) =>
                   index === self.findIndex(p => p.userId === participant.userId)
                 )
                 .map((participant, index) => {
-                const character = participantCharacters[participant.userId];
-                const characterImage = character?.imageUrl;
-                const displayName = character?.name || participant.userName;
-                const charFrameColor = character?.frameColor || '#FFD700';
-                const isCreator = participant.userId === roleplayCreatorId;
-                
-                return (
-                  <View 
-                    key={`participant-${participant.userId}-${index}`} 
-                    style={styles.horizontalParticipant}
-                  >
-                    {/* Crown icon ONLY for creator */}
-                    {isCreator && (
-                      <View style={styles.crownIconContainer}>
-                        <MaterialCommunityIcons name="crown" size={24} color="#FFD700" />
-                      </View>
-                    )}
-                    
-                    {/* Character Avatar */}
-                    <View style={[
-                      styles.horizontalAvatar,
-                      { borderColor: charFrameColor }
-                    ]}>
-                      {characterImage ? (
-                        <Image
-                          source={{ uri: characterImage }}
-                          style={styles.horizontalAvatarImage}
-                          defaultSource={require('./assets/a1.png')}
-                        />
-                      ) : (
-                        <Image
-                          source={require('./assets/a1.png')}
-                          style={styles.horizontalAvatarImage}
-                        />
+                  const character = participantCharacters[participant.userId];
+                  const characterImage = character?.imageUrl;
+                  const displayName = character?.name || participant.userName;
+                  const charFrameColor = character?.frameColor || '#FFD700';
+                  const isCreator = participant.userId === roleplayCreatorId;
+
+                  return (
+                    <View
+                      key={`participant-${participant.userId}-${index}`}
+                      style={styles.horizontalParticipant}
+                    >
+                      {/* Crown icon ONLY for creator */}
+                      {isCreator && (
+                        <View style={styles.crownIconContainer}>
+                          <MaterialCommunityIcons name="crown" size={24} color="#FFD700" />
+                        </View>
                       )}
+
+                      {/* Character Avatar */}
+                      <View style={[
+                        styles.horizontalAvatar,
+                        { borderColor: charFrameColor }
+                      ]}>
+                        {characterImage ? (
+                          <Image
+                            source={{ uri: characterImage }}
+                            style={styles.horizontalAvatarImage}
+                            defaultSource={require('./assets/a1.png')}
+                          />
+                        ) : (
+                          <Image
+                            source={require('./assets/a1.png')}
+                            style={styles.horizontalAvatarImage}
+                          />
+                        )}
+                      </View>
+
+                      {/* Character/Participant Name */}
+                      <Text style={styles.horizontalParticipantName} numberOfLines={1}>
+                        {displayName}
+                      </Text>
                     </View>
-                    
-                    {/* Character/Participant Name */}
-                    <Text style={styles.horizontalParticipantName} numberOfLines={1}>
-                      {displayName}
-                    </Text>
-                  </View>
-                );
-              })}
+                  );
+                })}
             </ScrollView>
           </View>
 
           {/* Center Play Button */}
           <View style={styles.centerPlayButtonContainer}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.playButton}
               onPress={() => setShowChat(true)}
             >
@@ -1045,7 +1211,7 @@ export default function RoleplayScreen() {
 
         {/* Controls */}
         <View style={styles.controlsContainer}>
-  
+
 
           <TouchableOpacity
             style={styles.chatButton}
@@ -1075,8 +1241,8 @@ export default function RoleplayScreen() {
                   <Ionicons name="close" size={24} color="#fff" />
                 </TouchableOpacity>
               </View>
-              
-              <ScrollView 
+
+              <ScrollView
                 ref={chatScrollRef}
                 style={styles.chatMessages}
                 contentContainerStyle={styles.chatMessagesContent}
@@ -1087,11 +1253,11 @@ export default function RoleplayScreen() {
                   const msgFrameColor = msg.frameColor || (isOwnMessage ? '#A855F7' : '#EC4899');
                   // Always use white text for maximum visibility
                   const msgTextColor = '#FFFFFF';
-                  
+
                   // Get character image for the sender
                   const senderCharacter = participantCharacters[msg.senderId];
                   const displayImage = senderCharacter?.imageUrl || msg.senderImage;
-                  
+
                   return (
                     <View
                       key={msg.id}
@@ -1137,8 +1303,8 @@ export default function RoleplayScreen() {
                   );
                 })}
               </ScrollView>
-              
-              <KeyboardAvoidingView 
+
+              <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
               >
@@ -1152,15 +1318,15 @@ export default function RoleplayScreen() {
                     multiline
                     maxLength={500}
                   />
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.chatSendButton}
                     onPress={sendChatMessage}
                     disabled={!chatInput.trim()}
                   >
-                    <Ionicons 
-                      name="send" 
-                      size={20} 
-                      color={chatInput.trim() ? '#fff' : '#999'} 
+                    <Ionicons
+                      name="send"
+                      size={20}
+                      color={chatInput.trim() ? '#fff' : '#999'}
                     />
                   </TouchableOpacity>
                 </View>
@@ -1195,8 +1361,8 @@ export default function RoleplayScreen() {
                 {/* Character Image Section */}
                 <View style={styles.characterImageSection}>
                   <Text style={styles.sectionTitle}>Character Image</Text>
-                  
-                  <TouchableOpacity 
+
+                  <TouchableOpacity
                     style={styles.imagePreviewContainer}
                     onPress={() => setShowImageOptions(true)}
                     disabled={uploadingImage}
@@ -1207,16 +1373,16 @@ export default function RoleplayScreen() {
                         <Text style={styles.placeholderText}>Uploading...</Text>
                       </View>
                     ) : characterImage ? (
-                      <Image 
-                        source={{ uri: characterImage }} 
+                      <Image
+                        source={{ uri: characterImage }}
                         style={styles.characterImage}
                       />
                     ) : (
                       <View style={styles.imagePlaceholder}>
-                        <MaterialCommunityIcons 
-                          name="account-circle-outline" 
-                          size={80} 
-                          color="#666" 
+                        <MaterialCommunityIcons
+                          name="account-circle-outline"
+                          size={80}
+                          color="#666"
                         />
                         <Text style={styles.placeholderText}>Add Character Image</Text>
                       </View>
@@ -1227,7 +1393,7 @@ export default function RoleplayScreen() {
                 {/* Character Info */}
                 <View style={styles.characterInfoSection}>
                   <Text style={styles.sectionTitle}>Character Details</Text>
-                  
+
                   <TextInput
                     style={styles.characterInput}
                     placeholder="Character Name"
@@ -1236,7 +1402,7 @@ export default function RoleplayScreen() {
                     onChangeText={setCharacterName}
                     maxLength={50}
                   />
-                  
+
                   <TextInput
                     style={[styles.characterInput, styles.characterTextArea]}
                     placeholder="Character Description (optional)"
@@ -1258,10 +1424,10 @@ export default function RoleplayScreen() {
 
                   {/* Live Preview */}
                   <View style={styles.colorPreview}>
-                    <View 
+                    <View
                       style={[
-                        styles.previewBubble, 
-                        { 
+                        styles.previewBubble,
+                        {
                           borderColor: frameColor,
                           borderWidth: 3,
                           backgroundColor: `${frameColor}20`
@@ -1325,16 +1491,16 @@ export default function RoleplayScreen() {
                           style={styles.presetButton}
                           onPress={() => applyPreset(preset)}
                         >
-                          <View 
+                          <View
                             style={[
                               styles.presetCircle,
-                              { 
+                              {
                                 borderColor: preset.frame,
                                 backgroundColor: `${preset.frame}40`
                               }
                             ]}
                           >
-                            <View 
+                            <View
                               style={[
                                 styles.presetInner,
                                 { backgroundColor: preset.text }
@@ -1349,7 +1515,7 @@ export default function RoleplayScreen() {
                 </View>
 
                 {/* Save Button */}
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.saveButton}
                   onPress={saveCharacterCustomization}
                 >
@@ -1369,8 +1535,8 @@ export default function RoleplayScreen() {
           <View style={styles.modalOverlay}>
             <View style={styles.imageOptionsModal}>
               <Text style={styles.modalTitle}>Add Character Image</Text>
-              
-              <TouchableOpacity 
+
+              <TouchableOpacity
                 style={styles.optionButton}
                 onPress={handleGalleryUpload}
               >
@@ -1381,7 +1547,7 @@ export default function RoleplayScreen() {
                 </View>
               </TouchableOpacity>
 
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.optionButton}
                 onPress={handleAIGeneration}
               >
@@ -1395,7 +1561,7 @@ export default function RoleplayScreen() {
                 </View>
               </TouchableOpacity>
 
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.cancelButton}
                 onPress={() => setShowImageOptions(false)}
               >
@@ -1421,30 +1587,30 @@ export default function RoleplayScreen() {
                   <Ionicons name="close" size={28} color="#fff" />
                 </TouchableOpacity>
               </View>
-              
+
               <ScrollView>
                 <View style={styles.colorGrid}>
-                  {['#FFD700', '#7C3AED', '#3B82F6', '#10B981', '#EF4444', '#EC4899', 
+                  {['#FFD700', '#7C3AED', '#3B82F6', '#10B981', '#EF4444', '#EC4899',
                     '#06B6D4', '#F97316', '#8B5CF6', '#14B8A6', '#F59E0B', '#6366F1',
                     '#1F2937', '#FFFFFF', '#9CA3AF', '#4B5563'].map((color) => (
-                    <TouchableOpacity
-                      key={color}
-                      style={[styles.colorOption, { backgroundColor: color }]}
-                      onPress={() => {
-                        if (colorPickerType === 'frame') {
-                          setFrameColor(color);
-                        } else {
-                          setTextColor(color);
-                        }
-                        setShowColorPicker(false);
-                      }}
-                    >
-                      {(colorPickerType === 'frame' && frameColor === color) ||
-                       (colorPickerType === 'text' && textColor === color) ? (
-                        <Ionicons name="checkmark" size={24} color="#fff" />
-                      ) : null}
-                    </TouchableOpacity>
-                  ))}
+                      <TouchableOpacity
+                        key={color}
+                        style={[styles.colorOption, { backgroundColor: color }]}
+                        onPress={() => {
+                          if (colorPickerType === 'frame') {
+                            setFrameColor(color);
+                          } else {
+                            setTextColor(color);
+                          }
+                          setShowColorPicker(false);
+                        }}
+                      >
+                        {(colorPickerType === 'frame' && frameColor === color) ||
+                          (colorPickerType === 'text' && textColor === color) ? (
+                          <Ionicons name="checkmark" size={24} color="#fff" />
+                        ) : null}
+                      </TouchableOpacity>
+                    ))}
                 </View>
               </ScrollView>
             </View>
@@ -1458,21 +1624,28 @@ export default function RoleplayScreen() {
           transparent={false}
           onRequestClose={() => {
             // When user presses back button, confirm if they want to leave roleplay
-            Alert.alert(
-              'Character Required',
-              'You need to create or select a character to participate in this roleplay. Do you want to leave?',
-              [
-                { text: 'Stay', style: 'cancel' },
-                {
-                  text: 'Leave Roleplay',
-                  style: 'destructive',
-                  onPress: () => {
-                    setShowCharacterSelector(false);
-                    navigation.goBack();
+            if (Platform.OS === 'web') {
+              if (window.confirm('You need to create or select a character to participate in this roleplay. Do you want to leave?')) {
+                setShowCharacterSelector(false);
+                navigation.goBack();
+              }
+            } else {
+              Alert.alert(
+                'Character Required',
+                'You need to create or select a character to participate in this roleplay. Do you want to leave?',
+                [
+                  { text: 'Stay', style: 'cancel' },
+                  {
+                    text: 'Leave Roleplay',
+                    style: 'destructive',
+                    onPress: () => {
+                      setShowCharacterSelector(false);
+                      navigation.goBack();
+                    }
                   }
-                }
-              ]
-            );
+                ]
+              );
+            }
           }}
         >
           <LinearGradient colors={['#1a0a2e', '#2d1b4e', '#1a0a2e']} style={styles.container}>
@@ -1480,24 +1653,31 @@ export default function RoleplayScreen() {
               {/* Selector Header */}
               <LinearGradient colors={['#7C3AED', '#9333EA', '#A855F7']} style={styles.header}>
                 <View style={styles.headerContent}>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     onPress={() => {
-                      Alert.alert(
-                        'Character Required',
-                        'You need to create or select a character to participate in this roleplay. Do you want to leave?',
-                        [
-                          { text: 'Stay', style: 'cancel' },
-                          {
-                            text: 'Leave Roleplay',
-                            style: 'destructive',
-                            onPress: () => {
-                              setShowCharacterSelector(false);
-                              navigation.goBack();
+                      if (Platform.OS === 'web') {
+                        if (window.confirm('You need to create or select a character to participate in this roleplay. Do you want to leave?')) {
+                          setShowCharacterSelector(false);
+                          navigation.goBack();
+                        }
+                      } else {
+                        Alert.alert(
+                          'Character Required',
+                          'You need to create or select a character to participate in this roleplay. Do you want to leave?',
+                          [
+                            { text: 'Stay', style: 'cancel' },
+                            {
+                              text: 'Leave Roleplay',
+                              style: 'destructive',
+                              onPress: () => {
+                                setShowCharacterSelector(false);
+                                navigation.goBack();
+                              }
                             }
-                          }
-                        ]
-                      );
-                    }} 
+                          ]
+                        );
+                      }
+                    }}
                     style={styles.backButton}
                   >
                     <Ionicons name="close" size={24} color="#fff" />
@@ -1556,8 +1736,8 @@ export default function RoleplayScreen() {
                     {existingCharacters.length > 0 && (
                       <View style={{ marginTop: 20 }}>
                         <Text style={styles.existingCharactersHeader}>Your Characters</Text>
-                        <ScrollView 
-                          horizontal 
+                        <ScrollView
+                          horizontal
                           showsHorizontalScrollIndicator={false}
                           contentContainerStyle={{ paddingVertical: 12 }}
                         >

@@ -20,7 +20,7 @@ export default function AgeVerificationScreen({ navigation }) {
   if (!fontsLoaded) return null;
 
   const handleEnter = () => {
-    navigation.navigate('HomeScreen'); // 👈 change this to your target screen
+    navigation.navigate('TabBar'); // Navigate to main app
   };
 
   return (

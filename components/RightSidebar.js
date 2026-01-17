@@ -46,7 +46,10 @@ export default function RightSidebar({
                                     {community.name || community.community_title}
                                 </Text>
                                 <Text style={styles.communityMeta}>
-                                    {community.community_members?.length || 0} members
+                                    {community.members_count ||
+                                        (typeof community.community_members === 'number' ? community.community_members :
+                                            (Array.isArray(community.community_members) ? community.community_members.length :
+                                                (Array.isArray(community.members) ? community.members.length : 0)))} members
                                 </Text>
                                 {community.category && (
                                     <View style={styles.categoryTag}>
@@ -91,7 +94,10 @@ export default function RightSidebar({
                                     {community.name || community.community_title}
                                 </Text>
                                 <Text style={styles.communityMeta}>
-                                    {community.community_members?.length || 0} members
+                                    {community.members_count ||
+                                        (typeof community.community_members === 'number' ? community.community_members :
+                                            (Array.isArray(community.community_members) ? community.community_members.length :
+                                                (Array.isArray(community.members) ? community.members.length : 0)))} members
                                 </Text>
                                 {community.category && (
                                     <View style={styles.categoryTag}>

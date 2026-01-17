@@ -82,12 +82,23 @@ export const WalletProvider = ({ children }) => {
                 setWallet({ ...initialWallet, walletId: userId, loading: false });
             }
         } catch (error) {
-            console.error('Failed to fetch wallet:', error);
-            // Load cached data if Firestore fails
-            const cached = await AsyncStorage.getItem('wallet');
-            if (cached) {
-                setWallet({ ...JSON.parse(cached), loading: false });
-            } else {
+            console.error('Failed to fetch wallet:', error.code || error.message);
+            // Silently fail and use default values - don't throw error to user
+            try {
+                // Load cached data if Firestore fails
+                const cached = await AsyncStorage.getItem('wallet');
+                if (cached) {
+                    setWallet({ ...JSON.parse(cached), loading: false });
+                } else {
+                    // Set default empty wallet
+                    setWallet((prev) => ({
+                        ...prev,
+                        walletId: userId || null,
+                        loading: false
+                    }));
+                }
+            } catch (cacheError) {
+                console.log('Cache read failed, using default wallet');
                 setWallet((prev) => ({ ...prev, loading: false }));
             }
         }

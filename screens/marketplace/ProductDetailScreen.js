@@ -15,6 +15,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useWallet } from '../../context/WalletContext';
 import { productAPI } from '../../api/productAPI';
+import { auth } from '../../firebaseConfig';
 
 const BG = '#0B0B0E';
 const CARD = '#17171C';
@@ -133,12 +134,47 @@ export default function ProductDetailScreen({ route, navigation }) {
         );
     };
 
-    const handleContactSeller = () => {
-        // Navigate to chat with seller
-        navigation.navigate('ChatScreen', {
-            recipientId: product.seller.userId,
-            recipientName: product.seller.username
-        });
+    const handleContactSeller = async () => {
+        try {
+            // Create or get conversation with seller
+            const { getOrCreateConversation } = await import('../../messageHelpers');
+            const currentUserId = auth?.currentUser?.uid;
+
+            if (!currentUserId) {
+                Alert.alert('Error', 'Please log in to message the seller');
+                return;
+            }
+
+            const conversationId = await getOrCreateConversation(currentUserId, product.seller.userId);
+
+            // Build proper display name
+            let displayName = 'Seller';
+            if (product.seller.firstName || product.seller.lastName) {
+                const first = product.seller.firstName || '';
+                const last = product.seller.lastName || '';
+                displayName = `${first} ${last}`.trim();
+            } else if (product.seller.username) {
+                displayName = product.seller.username;
+            } else if (product.seller.displayName) {
+                displayName = product.seller.displayName;
+            }
+
+            // Get username handle (not email)
+            const userHandle = product.seller.username ? `@${product.seller.username}` : '@seller';
+
+            // Navigate to chat with seller
+            navigation.navigate('Chat', {
+                conversationId,
+                otherUserId: product.seller.userId,
+                isGroup: false,
+                userName: displayName,
+                userHandle: userHandle,
+                userAvatar: product.seller.profilePicture || product.seller.profileImage || null,
+            });
+        } catch (error) {
+            console.error('Error contacting seller:', error);
+            Alert.alert('Error', 'Failed to start conversation with seller');
+        }
     };
 
     if (loading) {

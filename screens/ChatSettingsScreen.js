@@ -8,7 +8,8 @@ import {
   StyleSheet,
   Switch,
   Alert,
-  Image
+  Image,
+  Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { doc, onSnapshot, getDoc } from 'firebase/firestore';
@@ -36,52 +37,52 @@ const DANGER = '#EF4444';
 export default function ChatSettingsScreen({ route, navigation }) {
   const { conversationId } = route.params;
   const currentUserId = auth.currentUser?.uid;
-  
+
   const [conversation, setConversation] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
   const [notificationPref, setNotificationPref] = useState('all');
   const [isAdmin, setIsAdmin] = useState(false);
   const [participants, setParticipants] = useState([]);
-  
+
   useEffect(() => {
     if (!conversationId) return;
-    
+
     const conversationRef = doc(db, 'conversations', conversationId);
     const unsubscribe = onSnapshot(conversationRef, async (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data();
         setConversation(data);
-        
+
         // Check mute status
         const muteUntil = data.settings?.[currentUserId]?.muteUntil;
         if (muteUntil) {
           setIsMuted(muteUntil > Date.now());
         }
-        
+
         // Get notification preference
         const pref = data.settings?.[currentUserId]?.notifications || 'all';
         setNotificationPref(pref);
-        
+
         // Check if current user is admin
         if (data.type === 'group') {
           setIsAdmin(data.admins?.includes(currentUserId));
-          
+
           // Load participant details
           const participantIds = data.participants || [];
           const participantPromises = participantIds.map(async (userId) => {
             const userDoc = await getDoc(doc(db, 'users', userId));
             return userDoc.exists() ? { id: userId, ...userDoc.data() } : null;
           });
-          
+
           const participantData = await Promise.all(participantPromises);
           setParticipants(participantData.filter(Boolean));
         }
       }
     });
-    
+
     return () => unsubscribe();
   }, [conversationId, currentUserId]);
-  
+
   const handleMuteToggle = async () => {
     try {
       if (isMuted) {
@@ -122,7 +123,7 @@ export default function ChatSettingsScreen({ route, navigation }) {
       Alert.alert('Error', 'Failed to update mute setting');
     }
   };
-  
+
   const handleNotificationChange = async (value) => {
     try {
       await setNotificationPreference(conversationId, currentUserId, value);
@@ -131,7 +132,7 @@ export default function ChatSettingsScreen({ route, navigation }) {
       console.error('Error changing notification:', error);
     }
   };
-  
+
   const handleArchive = async () => {
     try {
       await archiveConversation(conversationId, currentUserId);
@@ -142,7 +143,7 @@ export default function ChatSettingsScreen({ route, navigation }) {
       Alert.alert('Error', 'Failed to archive conversation');
     }
   };
-  
+
   const handleClearChat = async () => {
     Alert.alert(
       'Clear chat history?',
@@ -165,7 +166,7 @@ export default function ChatSettingsScreen({ route, navigation }) {
       ]
     );
   };
-  
+
   const handleLeaveGroup = async () => {
     Alert.alert(
       'Leave group?',
@@ -189,7 +190,7 @@ export default function ChatSettingsScreen({ route, navigation }) {
       ]
     );
   };
-  
+
   const handleRemoveMember = async (userId) => {
     Alert.alert(
       'Remove member?',
@@ -211,7 +212,7 @@ export default function ChatSettingsScreen({ route, navigation }) {
       ]
     );
   };
-  
+
   const handlePromoteToAdmin = async (userId) => {
     try {
       await promoteToAdmin(conversationId, userId, currentUserId);
@@ -220,7 +221,7 @@ export default function ChatSettingsScreen({ route, navigation }) {
       Alert.alert('Error', 'Failed to promote member');
     }
   };
-  
+
   const handleDemoteAdmin = async (userId) => {
     try {
       await demoteAdmin(conversationId, userId, currentUserId);
@@ -229,7 +230,7 @@ export default function ChatSettingsScreen({ route, navigation }) {
       Alert.alert('Error', 'Failed to demote admin');
     }
   };
-  
+
   const handleBlock = async (userId) => {
     Alert.alert(
       'Block user?',
@@ -252,7 +253,7 @@ export default function ChatSettingsScreen({ route, navigation }) {
       ]
     );
   };
-  
+
   if (!conversation) {
     return (
       <View style={styles.container}>
@@ -260,180 +261,189 @@ export default function ChatSettingsScreen({ route, navigation }) {
       </View>
     );
   }
-  
+
   const isGroup = conversation.type === 'group';
-  
+
   return (
-    <ScrollView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Settings</Text>
-      </View>
-      
-      {/* Group info */}
-      {isGroup && (
-        <View style={styles.section}>
-          <View style={styles.groupHeader}>
-            {conversation.groupIcon ? (
-              <Image source={{ uri: conversation.groupIcon }} style={styles.groupIcon} />
-            ) : (
-              <View style={styles.groupIconPlaceholder}>
-                <Ionicons name="people" size={32} color="#666" />
-              </View>
-            )}
-            <Text style={styles.groupName}>{conversation.groupName}</Text>
-            <Text style={styles.memberCount}>
-              {participants.length} {participants.length === 1 ? 'member' : 'members'}
-            </Text>
-          </View>
-        </View>
-      )}
-      
-      {/* Notification settings */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Notifications</Text>
-        
-        <View style={styles.settingRow}>
-          <View style={styles.settingInfo}>
-            <Ionicons name="notifications-off" size={20} color="#fff" />
-            <Text style={styles.settingLabel}>Mute notifications</Text>
-          </View>
-          <Switch
-            value={isMuted}
-            onValueChange={handleMuteToggle}
-            trackColor={{ true: ACCENT, false: '#333' }}
-          />
-        </View>
-        
-        <View style={styles.settingRow}>
-          <View style={styles.settingInfo}>
-            <Ionicons name="radio-button-on" size={20} color="#fff" />
-            <Text style={styles.settingLabel}>Notification type</Text>
-          </View>
-          <TouchableOpacity 
-            style={styles.selectButton}
-            onPress={() => {
-              Alert.alert(
-                'Notification preference',
-                'Choose notification type:',
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'All messages',
-                    onPress: () => handleNotificationChange('all')
-                  },
-                  {
-                    text: 'Mentions only',
-                    onPress: () => handleNotificationChange('mentions')
-                  },
-                  {
-                    text: 'Off',
-                    onPress: () => handleNotificationChange('off')
-                  }
-                ]
-              );
-            }}
-          >
-            <Text style={styles.selectButtonText}>
-              {notificationPref === 'all' ? 'All messages' : 
-               notificationPref === 'mentions' ? 'Mentions only' : 'Off'}
-            </Text>
-            <Ionicons name="chevron-forward" size={16} color="#666" />
+    <View style={styles.container}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
+          <Text style={styles.headerTitle}>Settings</Text>
         </View>
-      </View>
-      
-      {/* Group members (admins only) */}
-      {isGroup && isAdmin && participants.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Members</Text>
-          {participants.map((participant) => (
-            <View key={participant.id} style={styles.participantRow}>
-              <Image 
-                source={{ uri: participant.profileImage || 'https://via.placeholder.com/40' }}
-                style={styles.participantAvatar}
-              />
-              <View style={styles.participantInfo}>
-                <Text style={styles.participantName}>{participant.name}</Text>
-                {conversation.admins?.includes(participant.id) && (
-                  <Text style={styles.adminBadge}>Admin</Text>
-                )}
-              </View>
-              
-              {participant.id !== currentUserId && (
-                <View style={styles.memberActions}>
-                  {conversation.admins?.includes(participant.id) ? (
-                    <TouchableOpacity
-                      style={styles.iconButton}
-                      onPress={() => handleDemoteAdmin(participant.id)}
-                    >
-                      <Ionicons name="remove-circle-outline" size={20} color={ACCENT} />
-                    </TouchableOpacity>
-                  ) : (
-                    <TouchableOpacity
-                      style={styles.iconButton}
-                      onPress={() => handlePromoteToAdmin(participant.id)}
-                    >
-                      <Ionicons name="star-outline" size={20} color={ACCENT} />
-                    </TouchableOpacity>
-                  )}
-                  
-                  <TouchableOpacity
-                    style={styles.iconButton}
-                    onPress={() => handleRemoveMember(participant.id)}
-                  >
-                    <Ionicons name="person-remove-outline" size={20} color={DANGER} />
-                  </TouchableOpacity>
+
+        {/* Group info */}
+        {isGroup && (
+          <View style={styles.section}>
+            <View style={styles.groupHeader}>
+              {conversation.groupIcon ? (
+                <Image source={{ uri: conversation.groupIcon }} style={styles.groupIcon} />
+              ) : (
+                <View style={styles.groupIconPlaceholder}>
+                  <Ionicons name="people" size={32} color="#666" />
                 </View>
               )}
+              <Text style={styles.groupName}>{conversation.groupName}</Text>
+              <Text style={styles.memberCount}>
+                {participants.length} {participants.length === 1 ? 'member' : 'members'}
+              </Text>
             </View>
-          ))}
+          </View>
+        )}
+
+        {/* Notification settings */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Notifications</Text>
+
+          <View style={styles.settingRow}>
+            <View style={styles.settingInfo}>
+              <Ionicons name="notifications-off" size={20} color="#fff" />
+              <Text style={styles.settingLabel}>Mute notifications</Text>
+            </View>
+            <Switch
+              value={isMuted}
+              onValueChange={handleMuteToggle}
+              trackColor={{ true: ACCENT, false: '#333' }}
+            />
+          </View>
+
+          <View style={styles.settingRow}>
+            <View style={styles.settingInfo}>
+              <Ionicons name="radio-button-on" size={20} color="#fff" />
+              <Text style={styles.settingLabel}>Notification type</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.selectButton}
+              onPress={() => {
+                Alert.alert(
+                  'Notification preference',
+                  'Choose notification type:',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'All messages',
+                      onPress: () => handleNotificationChange('all')
+                    },
+                    {
+                      text: 'Mentions only',
+                      onPress: () => handleNotificationChange('mentions')
+                    },
+                    {
+                      text: 'Off',
+                      onPress: () => handleNotificationChange('off')
+                    }
+                  ]
+                );
+              }}
+            >
+              <Text style={styles.selectButtonText}>
+                {notificationPref === 'all' ? 'All messages' :
+                  notificationPref === 'mentions' ? 'Mentions only' : 'Off'}
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color="#666" />
+            </TouchableOpacity>
+          </View>
         </View>
-      )}
-      
-      {/* Actions */}
-      <View style={styles.section}>
-        <TouchableOpacity style={styles.actionRow} onPress={handleArchive}>
-          <Ionicons name="archive-outline" size={20} color="#fff" />
-          <Text style={styles.actionText}>Archive conversation</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.actionRow} onPress={handleClearChat}>
-          <Ionicons name="trash-outline" size={20} color="#fff" />
-          <Text style={styles.actionText}>Clear chat history</Text>
-        </TouchableOpacity>
-        
-        {isGroup && (
-          <TouchableOpacity style={styles.actionRow} onPress={handleLeaveGroup}>
-            <Ionicons name="exit-outline" size={20} color={DANGER} />
-            <Text style={[styles.actionText, { color: DANGER }]}>Leave group</Text>
-          </TouchableOpacity>
+
+        {/* Group members (admins only) */}
+        {isGroup && isAdmin && participants.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Members</Text>
+            {participants.map((participant) => (
+              <View key={participant.id} style={styles.participantRow}>
+                <Image
+                  source={{ uri: participant.profileImage || 'https://via.placeholder.com/40' }}
+                  style={styles.participantAvatar}
+                />
+                <View style={styles.participantInfo}>
+                  <Text style={styles.participantName}>{participant.name}</Text>
+                  {conversation.admins?.includes(participant.id) && (
+                    <Text style={styles.adminBadge}>Admin</Text>
+                  )}
+                </View>
+
+                {participant.id !== currentUserId && (
+                  <View style={styles.memberActions}>
+                    {conversation.admins?.includes(participant.id) ? (
+                      <TouchableOpacity
+                        style={styles.iconButton}
+                        onPress={() => handleDemoteAdmin(participant.id)}
+                      >
+                        <Ionicons name="remove-circle-outline" size={20} color={ACCENT} />
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.iconButton}
+                        onPress={() => handlePromoteToAdmin(participant.id)}
+                      >
+                        <Ionicons name="star-outline" size={20} color={ACCENT} />
+                      </TouchableOpacity>
+                    )}
+
+                    <TouchableOpacity
+                      style={styles.iconButton}
+                      onPress={() => handleRemoveMember(participant.id)}
+                    >
+                      <Ionicons name="person-remove-outline" size={20} color={DANGER} />
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            ))}
+          </View>
         )}
-        
-        {!isGroup && conversation.participants && (
-          <TouchableOpacity 
-            style={styles.actionRow}
-            onPress={() => {
-              const otherUserId = conversation.participants.find(id => id !== currentUserId);
-              handleBlock(otherUserId);
-            }}
-          >
-            <Ionicons name="ban-outline" size={20} color={DANGER} />
-            <Text style={[styles.actionText, { color: DANGER }]}>Block user</Text>
+
+        {/* Actions */}
+        <View style={styles.section}>
+          <TouchableOpacity style={styles.actionRow} onPress={handleArchive}>
+            <Ionicons name="archive-outline" size={20} color="#fff" />
+            <Text style={styles.actionText}>Archive conversation</Text>
           </TouchableOpacity>
-        )}
-      </View>
-    </ScrollView>
+
+          <TouchableOpacity style={styles.actionRow} onPress={handleClearChat}>
+            <Ionicons name="trash-outline" size={20} color="#fff" />
+            <Text style={styles.actionText}>Clear chat history</Text>
+          </TouchableOpacity>
+
+          {isGroup && (
+            <TouchableOpacity style={styles.actionRow} onPress={handleLeaveGroup}>
+              <Ionicons name="exit-outline" size={20} color={DANGER} />
+              <Text style={[styles.actionText, { color: DANGER }]}>Leave group</Text>
+            </TouchableOpacity>
+          )}
+
+          {!isGroup && conversation.participants && (
+            <TouchableOpacity
+              style={styles.actionRow}
+              onPress={() => {
+                const otherUserId = conversation.participants.find(id => id !== currentUserId);
+                handleBlock(otherUserId);
+              }}
+            >
+              <Ionicons name="ban-outline" size={20} color={DANGER} />
+              <Text style={[styles.actionText, { color: DANGER }]}>Block user</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: BG
+    backgroundColor: BG,
+    ...(Platform.OS === 'web' && { height: '100vh', overflow: 'hidden' })
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 30,
   },
   loadingText: {
     color: '#fff',

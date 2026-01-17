@@ -9,6 +9,7 @@ import {
   SafeAreaView,
   RefreshControl,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useWallet } from "./context/WalletContext";
@@ -163,6 +164,45 @@ export default function MarketPlaceScreen({ navigation }) {
   };
 
   const useDesktopLayout = isWeb && isDesktopOrLarger();
+
+  // Show "Coming Soon" on web platform
+  if (Platform.OS === 'web') {
+    return (
+      <SafeAreaView style={styles.container}>
+        {/* Desktop Header */}
+        {useDesktopLayout && (
+          <DesktopHeader
+            userProfile={userProfile}
+            onSearchPress={() => navigation.navigate('SearchBar')}
+            onNotificationsPress={() => navigation.navigate('Notification')}
+            onSettingsPress={() => navigation.navigate('Profile')}
+            onProfilePress={() => navigation.navigate('Profile')}
+          />
+        )}
+
+        <View style={styles.comingSoonContainer}>
+          <LinearGradient
+            colors={["#7C3AED", "#08FFE2"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.comingSoonGradient}
+          >
+            <Ionicons name="cart-outline" size={80} color="#fff" style={{ marginBottom: 20 }} />
+            <Text style={styles.comingSoonTitle}>Marketplace</Text>
+            <Text style={styles.comingSoonSubtitle}>Coming Soon to Web</Text>
+            <Text style={styles.comingSoonDescription}>
+              The marketplace feature is currently available on our mobile app.{'\n'}
+              Download the app to start shopping!
+            </Text>
+            <View style={styles.comingSoonBadge}>
+              <MaterialCommunityIcons name="cellphone" size={20} color="#7C3AED" />
+              <Text style={styles.comingSoonBadgeText}>Available on Mobile App</Text>
+            </View>
+          </LinearGradient>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -651,6 +691,64 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#23232A",
     padding: 10,
+  },
+
+  // Coming Soon Styles
+  comingSoonContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  comingSoonGradient: {
+    borderRadius: 24,
+    padding: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    maxWidth: 500,
+    width: "100%",
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  comingSoonTitle: {
+    color: "#fff",
+    fontSize: 32,
+    fontWeight: "800",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  comingSoonSubtitle: {
+    color: "#fff",
+    fontSize: 20,
+    fontWeight: "600",
+    marginBottom: 16,
+    textAlign: "center",
+    opacity: 0.9,
+  },
+  comingSoonDescription: {
+    color: "#fff",
+    fontSize: 16,
+    textAlign: "center",
+    lineHeight: 24,
+    marginBottom: 24,
+    opacity: 0.85,
+  },
+  comingSoonBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 25,
+    gap: 8,
+  },
+  comingSoonBadgeText: {
+    color: "#7C3AED",
+    fontSize: 14,
+    fontWeight: "700",
   },
   productImg: { width: "100%", height: 110, borderRadius: 10, marginBottom: 8 },
   productTitle: { color: "#fff", fontWeight: "700", marginBottom: 6 },

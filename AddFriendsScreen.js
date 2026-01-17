@@ -10,6 +10,9 @@ import {
   Alert,
   ActivityIndicator,
   StatusBar,
+  SafeAreaView,
+  Platform,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { db, auth } from './firebaseConfig';
@@ -23,6 +26,27 @@ import {
   getFriendshipStatus,
   getFriends,
 } from './utils/friendHelpers';
+import {
+  isWeb,
+  isDesktopOrLarger,
+} from './utils/webResponsive';
+import DesktopHeader from './components/DesktopHeader';
+
+// Helper function to convert relative image URLs to absolute URLs
+const getAbsoluteImageUrl = (url) => {
+  if (!url || typeof url !== 'string') return null;
+  const trimmedUrl = url.trim();
+  if (!trimmedUrl) return null;
+
+  // If already an absolute URL, return as-is
+  if (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://')) {
+    return trimmedUrl;
+  }
+
+  // Convert relative path to absolute URL
+  const baseUrl = 'https://socialvibingapp.karr83anime.com/';
+  return baseUrl + trimmedUrl.replace(/^\/+/, ''); // Remove leading slashes
+};
 
 export default function AddFriendsScreen({ navigation }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -33,10 +57,16 @@ export default function AddFriendsScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('search'); // 'search', 'received', 'sent', 'suggestions'
   const [friendStatuses, setFriendStatuses] = useState({});
+  const [userProfile, setUserProfile] = useState(null);
+  const [failedImages, setFailedImages] = useState({}); // Track failed image loads
   const currentUser = auth.currentUser;
+
+  // Detect if we should show desktop layout
+  const useDesktopLayout = isWeb && isDesktopOrLarger();
 
   // Load friend requests, suggestions and all users on mount
   useEffect(() => {
+    loadUserProfile();
     loadFriendRequests();
     loadSuggestions();
     loadAllUsers(); // Load all unfriend users initially
@@ -73,6 +103,18 @@ export default function AddFriendsScreen({ navigation }) {
       setSentRequests(sentWithData);
     } catch (error) {
       console.error('Error loading friend requests:', error);
+    }
+  };
+
+  const loadUserProfile = async () => {
+    try {
+      if (!currentUser) return;
+      const userDoc = await getDocs(query(collection(db, 'users'), where('uid', '==', currentUser.uid)));
+      if (!userDoc.empty) {
+        setUserProfile(userDoc.docs[0].data());
+      }
+    } catch (error) {
+      console.error('Error loading user profile:', error);
     }
   };
 
@@ -124,10 +166,10 @@ export default function AddFriendsScreen({ navigation }) {
       const usersRef = collection(db, 'users');
       const q = query(usersRef, where('__name__', '==', userId));
       const snapshot = await getDocs(q);
-      
+
       if (!snapshot.empty) {
         const userData = snapshot.docs[0].data();
-        
+
         let displayName = 'User';
         if ((userData.username || userData.user_name) && (userData.username || userData.user_name).trim()) {
           displayName = userData.username || userData.user_name;
@@ -140,12 +182,14 @@ export default function AddFriendsScreen({ navigation }) {
         } else if (userData.email || userData.user_email) {
           displayName = userData.email.split('@')[0];
         }
-        
+
+        const avatarUrl = userData.profileImage || userData.user_picture || userData.profilePicture || userData.profile_image || userData.profile_picture || userData.avatar || userData.photoURL || null;
+
         return {
           id: userId,
           name: displayName,
-          email: userData.email || '',
-          avatar: userData.profilePicture || userData.profileImage || userData.avatar || userData.photoURL || null,
+          email: userData.email || userData.user_email || '',
+          avatar: avatarUrl && avatarUrl.trim() ? avatarUrl : null,
         };
       }
       return {
@@ -173,45 +217,63 @@ export default function AddFriendsScreen({ navigation }) {
       const q = query(usersRef, limit(250)); // Load first 250 users
       const snapshot = await getDocs(q);
       console.log('📦 Fetched users:', snapshot.docs.length);
-      
+
       const myFriends = await getFriends();
       console.log('👥 My friends:', myFriends.length);
       const results = [];
-      
+
       // First pass: Build user list without status (faster)
       for (const doc of snapshot.docs) {
         if (doc.id === currentUser.uid) continue; // Skip current user only
-        
+
         const userData = doc.data();
-        
+
+        // Debug: Log first user's data to see available fields
+        if (results.length === 0) {
+          console.log('📋 Sample user data fields:', Object.keys(userData));
+          console.log('🖼️ Profile image fields:', {
+            profileImage: userData.profileImage,
+            user_picture: userData.user_picture,
+            profilePicture: userData.profilePicture,
+            profile_image: userData.profile_image,
+            profile_picture: userData.profile_picture,
+            avatar: userData.avatar,
+            photoURL: userData.photoURL
+          });
+        }
+
         // Build display name
         let userDisplayName = 'User';
-        if (userData.username && userData.username.trim()) {
-          userDisplayName = userData.username;
-        } else if (userData.firstName || userData.lastName) {
-          const first = userData.firstName || '';
-          const last = userData.lastName || '';
+        if ((userData.username || userData.user_name) && (userData.username || userData.user_name).trim()) {
+          userDisplayName = userData.username || userData.user_name;
+        } else if (userData.firstName || userData.user_firstname || userData.lastName || userData.user_lastname) {
+          const first = userData.firstName || userData.user_firstname || '';
+          const last = userData.lastName || userData.user_lastname || '';
           userDisplayName = `${first} ${last}`.trim();
         } else if (userData.displayName && userData.displayName.trim()) {
           userDisplayName = userData.displayName;
-        } else if (userData.email) {
-          userDisplayName = userData.email.split('@')[0];
+        } else if (userData.email || userData.user_email) {
+          userDisplayName = (userData.email || userData.user_email).split('@')[0];
         }
-        
+
+        const avatarUrl = userData.profileImage || userData.user_picture || userData.profilePicture || userData.profile_image || userData.profile_picture || userData.avatar || userData.photoURL || null;
+
         results.push({
           id: doc.id,
           name: userDisplayName,
-          email: userData.email || '',
-          avatar: userData.profilePicture || userData.profileImage || userData.avatar || userData.photoURL || null,
+          email: userData.email || userData.user_email || '',
+          avatar: avatarUrl && avatarUrl.trim() ? avatarUrl : null,
           status: 'none', // Default status
           requestId: null,
         });
       }
-      
+
       console.log('✅ Initial results ready:', results.length);
+      console.log('🖼️ Users with avatars:', results.filter(r => r.avatar).length);
+      console.log('📸 Sample avatars:', results.slice(0, 3).map(r => ({ name: r.name, avatar: r.avatar })));
       setSearchResults(results);
       setLoading(false);
-      
+
       // Second pass: Update statuses in background - ONLY if this was called from initial load
       // Don't run background updates if search query exists
       if (!searchQuery.trim()) {
@@ -223,11 +285,11 @@ export default function AddFriendsScreen({ navigation }) {
               console.log('⏹️ Search detected, stopping background updates');
               break;
             }
-            
+
             const status = await getFriendshipStatus(initialResults[i].id);
             initialResults[i].status = typeof status === 'object' ? status.status : status;
             initialResults[i].requestId = typeof status === 'object' ? status.requestId : null;
-            
+
             // Update state periodically (every 5 users)
             if ((i + 1) % 5 === 0 || i === initialResults.length - 1) {
               // Final check before updating
@@ -243,7 +305,7 @@ export default function AddFriendsScreen({ navigation }) {
           }
         }
       }
-      
+
     } catch (error) {
       console.error('❌ Error loading all users:', error);
       setLoading(false);
@@ -261,10 +323,10 @@ export default function AddFriendsScreen({ navigation }) {
     setLoading(true);
     try {
       const usersRef = collection(db, 'users');
-      
+
       // OPTIMIZATION: Search by username or email with limit
       const searchLower = searchQuery.toLowerCase();
-      
+
       // Use indexed queries when possible for better performance
       let snapshot;
       if (searchQuery.includes('@')) {
@@ -276,14 +338,14 @@ export default function AddFriendsScreen({ navigation }) {
         const q = query(usersRef, limit(250)); // Fetch 250 users to search through
         snapshot = await getDocs(q);
       }
-      
+
       const results = [];
-      
+
       for (const doc of snapshot.docs) {
         if (doc.id === currentUser.uid) continue; // Skip current user only
-        
+
         const userData = doc.data();
-        
+
         // Get all searchable fields
         const username = (userData.username || userData.user_name || '').toLowerCase();
         const email = (userData.email || userData.user_email || '').toLowerCase();
@@ -293,44 +355,46 @@ export default function AddFriendsScreen({ navigation }) {
         const fullName = `${firstName} ${lastName}`.trim();
         const displayName = (userData.displayName || '').toLowerCase();
         const name = (userData.name || '').toLowerCase();
-        
+
         // Check if search query matches any field
         const matches = username.includes(searchLower) ||
-                       email.includes(searchLower) ||
-                       emailUsername.includes(searchLower) ||
-                       firstName.includes(searchLower) ||
-                       lastName.includes(searchLower) ||
-                       fullName.includes(searchLower) ||
-                       displayName.includes(searchLower) ||
-                       name.includes(searchLower);
-        
+          email.includes(searchLower) ||
+          emailUsername.includes(searchLower) ||
+          firstName.includes(searchLower) ||
+          lastName.includes(searchLower) ||
+          fullName.includes(searchLower) ||
+          displayName.includes(searchLower) ||
+          name.includes(searchLower);
+
         if (matches) {
           // Get friendship status
           const status = await getFriendshipStatus(doc.id);
-          
+
           // Build display name
           let userDisplayName = 'User';
-          if (userData.username && userData.username.trim()) {
-            userDisplayName = userData.username;
-          } else if (userData.firstName || userData.lastName) {
-            const first = userData.firstName || '';
-            const last = userData.lastName || '';
+          if ((userData.username || userData.user_name) && (userData.username || userData.user_name).trim()) {
+            userDisplayName = userData.username || userData.user_name;
+          } else if (userData.firstName || userData.user_firstname || userData.lastName || userData.user_lastname) {
+            const first = userData.firstName || userData.user_firstname || '';
+            const last = userData.lastName || userData.user_lastname || '';
             userDisplayName = `${first} ${last}`.trim();
           } else if (userData.displayName && userData.displayName.trim()) {
             userDisplayName = userData.displayName;
-          } else if (userData.email) {
-            userDisplayName = userData.email.split('@')[0];
+          } else if (userData.email || userData.user_email) {
+            userDisplayName = (userData.email || userData.user_email).split('@')[0];
           }
-          
+
+          const avatarUrl = userData.profileImage || userData.user_picture || userData.profilePicture || userData.profile_image || userData.profile_picture || userData.avatar || userData.photoURL || null;
+
           results.push({
             id: doc.id,
             name: userDisplayName,
-            email: userData.email || '',
-            avatar: userData.profilePicture || userData.profileImage || userData.avatar || userData.photoURL || null,
+            email: userData.email || userData.user_email || '',
+            avatar: avatarUrl && avatarUrl.trim() ? avatarUrl : null,
             status: typeof status === 'object' ? status.status : status,
             requestId: typeof status === 'object' ? status.requestId : null,
           });
-          
+
           // OPTIMIZATION: Stop after finding 50 matches
           if (results.length >= 50) break;
         }
@@ -432,96 +496,156 @@ export default function AddFriendsScreen({ navigation }) {
     }
   };
 
-  const renderSearchItem = ({ item }) => (
-    <View style={styles.userItem}>
-      <Image
-        source={item.avatar ? { uri: item.avatar } : require('./assets/profile.png')}
-        style={styles.avatar}
-      />
-      <View style={styles.userInfo}>
-        <Text style={styles.userName}>{item.name}</Text>
-        <Text style={styles.userEmail}>{item.email}</Text>
-      </View>
-      {renderActionButton(item)}
-    </View>
-  );
+  const renderSearchItem = ({ item }) => {
+    const absoluteAvatarUrl = getAbsoluteImageUrl(item.avatar);
+    const hasValidAvatar = absoluteAvatarUrl && !failedImages[item.id];
 
-  const renderSuggestionItem = ({ item }) => (
-    <View style={styles.userItem}>
-      <Image
-        source={item.avatar ? { uri: item.avatar } : require('./assets/profile.png')}
-        style={styles.avatar}
-      />
-      <View style={styles.userInfo}>
-        <Text style={styles.userName}>{item.name}</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+    return (
+      <View style={styles.userItem}>
+        {hasValidAvatar ? (
+          <Image
+            source={{ uri: absoluteAvatarUrl }}
+            style={styles.avatar}
+            onError={() => {
+              console.log('Image load failed for:', item.name, absoluteAvatarUrl);
+              setFailedImages(prev => ({ ...prev, [item.id]: true }));
+            }}
+          />
+        ) : (
+          <View style={[styles.avatar, { backgroundColor: '#2a2a2a', justifyContent: 'center', alignItems: 'center' }]}>
+            <Ionicons name="person" size={28} color="#666" />
+          </View>
+        )}
+        <View style={styles.userInfo}>
+          <Text style={styles.userName}>{item.name}</Text>
           <Text style={styles.userEmail}>{item.email}</Text>
-          {item.isFollower && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>Follower</Text>
-            </View>
-          )}
-          {item.isFollowing && (
-            <View style={[styles.badge, { backgroundColor: '#3b82f6' }]}>
-              <Text style={styles.badgeText}>Following</Text>
-            </View>
+        </View>
+        {renderActionButton(item)}
+      </View>
+    );
+  };
+
+  const renderSuggestionItem = ({ item }) => {
+    const absoluteAvatarUrl = getAbsoluteImageUrl(item.avatar);
+    const hasValidAvatar = absoluteAvatarUrl && !failedImages[item.id];
+
+    return (
+      <View style={styles.userItem}>
+        {hasValidAvatar ? (
+          <Image
+            source={{ uri: absoluteAvatarUrl }}
+            style={styles.avatar}
+            onError={() => {
+              console.log('Image load failed for:', item.name, absoluteAvatarUrl);
+              setFailedImages(prev => ({ ...prev, [item.id]: true }));
+            }}
+          />
+        ) : (
+          <View style={[styles.avatar, { backgroundColor: '#2a2a2a', justifyContent: 'center', alignItems: 'center' }]}>
+            <Ionicons name="person" size={28} color="#666" />
+          </View>
+        )}
+        <View style={styles.userInfo}>
+          <Text style={styles.userName}>{item.name}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+            <Text style={styles.userEmail}>{item.email}</Text>
+            {item.isFollower && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>Follower</Text>
+              </View>
+            )}
+            {item.isFollowing && (
+              <View style={[styles.badge, { backgroundColor: '#3b82f6' }]}>
+                <Text style={styles.badgeText}>Following</Text>
+              </View>
+            )}
+          </View>
+        </View>
+        {renderActionButton(item)}
+      </View>
+    );
+  };
+
+  const renderRequestItem = ({ item }) => {
+    const absoluteAvatarUrl = getAbsoluteImageUrl(item.userData.avatar);
+    const hasValidAvatar = absoluteAvatarUrl && !failedImages[item.userData.id || item.fromUserId || item.toUserId];
+    const userId = item.userData.id || item.fromUserId || item.toUserId;
+
+    return (
+      <View style={styles.userItem}>
+        {hasValidAvatar ? (
+          <Image
+            source={{ uri: absoluteAvatarUrl }}
+            style={styles.avatar}
+            onError={() => {
+              console.log('Image load failed for:', item.userData.name, absoluteAvatarUrl);
+              setFailedImages(prev => ({ ...prev, [userId]: true }));
+            }}
+          />
+        ) : (
+          <View style={[styles.avatar, { backgroundColor: '#2a2a2a', justifyContent: 'center', alignItems: 'center' }]}>
+            <Ionicons name="person" size={28} color="#666" />
+          </View>
+        )}
+        <View style={styles.userInfo}>
+          <Text style={styles.userName}>{item.userData.name}</Text>
+          <Text style={styles.userEmail}>{item.userData.email}</Text>
+        </View>
+        <View style={styles.requestActions}>
+          {activeTab === 'received' ? (
+            <>
+              <TouchableOpacity
+                style={[styles.requestButton, styles.acceptButton]}
+                onPress={() => handleAcceptRequest(item.id, item.fromUserId)}
+              >
+                <Ionicons name="checkmark" size={20} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.requestButton, styles.rejectButton]}
+                onPress={() => handleRejectRequest(item.id)}
+              >
+                <Ionicons name="close" size={20} color="#fff" />
+              </TouchableOpacity>
+            </>
+          ) : (
+            <TouchableOpacity
+              style={[styles.requestButton, styles.cancelButton]}
+              onPress={() => handleCancelRequest(item.id)}
+            >
+              <Text style={styles.requestButtonText}>Cancel</Text>
+            </TouchableOpacity>
           )}
         </View>
       </View>
-      {renderActionButton(item)}
-    </View>
-  );
-
-  const renderRequestItem = ({ item }) => (
-    <View style={styles.userItem}>
-      <Image
-        source={item.userData.avatar ? { uri: item.userData.avatar } : require('./assets/profile.png')}
-        style={styles.avatar}
-      />
-      <View style={styles.userInfo}>
-        <Text style={styles.userName}>{item.userData.name}</Text>
-        <Text style={styles.userEmail}>{item.userData.email}</Text>
-      </View>
-      <View style={styles.requestActions}>
-        {activeTab === 'received' ? (
-          <>
-            <TouchableOpacity
-              style={[styles.requestButton, styles.acceptButton]}
-              onPress={() => handleAcceptRequest(item.id, item.fromUserId)}
-            >
-              <Ionicons name="checkmark" size={20} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.requestButton, styles.rejectButton]}
-              onPress={() => handleRejectRequest(item.id)}
-            >
-              <Ionicons name="close" size={20} color="#fff" />
-            </TouchableOpacity>
-          </>
-        ) : (
-          <TouchableOpacity
-            style={[styles.requestButton, styles.cancelButton]}
-            onPress={() => handleCancelRequest(item.id)}
-          >
-            <Text style={styles.requestButtonText}>Cancel</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-    </View>
-  );
+    );
+  };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
-      
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Add Friends</Text>
-        <View style={styles.placeholder} />
-      </View>
+
+      {/* Desktop Header - Only show on desktop */}
+      {useDesktopLayout && (
+        <DesktopHeader
+          userProfile={userProfile}
+          onSearchPress={() => navigation?.navigate('SearchBar')}
+          onNotificationsPress={() => navigation?.navigate('Notification')}
+          onAddFriendsPress={() => { }}
+          onSettingsPress={() => navigation?.navigate('Profile')}
+          onProfilePress={() => navigation?.navigate('Profile')}
+        />
+      )}
+
+      {/* Header - Only show on mobile */}
+      {!useDesktopLayout && (
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Add Friends</Text>
+          <View style={styles.placeholder} />
+        </View>
+      )}
 
       {/* Tabs */}
       <View style={styles.tabs}>
@@ -534,7 +658,7 @@ export default function AddFriendsScreen({ navigation }) {
             Search
           </Text>
         </TouchableOpacity>
-        
+
         <TouchableOpacity
           style={[styles.tab, activeTab === 'suggestions' && styles.activeTab]}
           onPress={() => setActiveTab('suggestions')}
@@ -544,7 +668,7 @@ export default function AddFriendsScreen({ navigation }) {
             Suggestions {suggestions.length > 0 && `(${suggestions.length})`}
           </Text>
         </TouchableOpacity>
-        
+
         <TouchableOpacity
           style={[styles.tab, activeTab === 'received' && styles.activeTab]}
           onPress={() => setActiveTab('received')}
@@ -554,7 +678,7 @@ export default function AddFriendsScreen({ navigation }) {
             Requests {friendRequests.length > 0 && `(${friendRequests.length})`}
           </Text>
         </TouchableOpacity>
-        
+
         <TouchableOpacity
           style={[styles.tab, activeTab === 'sent' && styles.activeTab]}
           onPress={() => setActiveTab('sent')}
@@ -606,17 +730,17 @@ export default function AddFriendsScreen({ navigation }) {
             activeTab === 'search'
               ? searchResults
               : activeTab === 'suggestions'
-              ? suggestions
-              : activeTab === 'received'
-              ? friendRequests
-              : sentRequests
+                ? suggestions
+                : activeTab === 'received'
+                  ? friendRequests
+                  : sentRequests
           }
           renderItem={
-            activeTab === 'search' 
-              ? renderSearchItem 
+            activeTab === 'search'
+              ? renderSearchItem
               : activeTab === 'suggestions'
-              ? renderSuggestionItem
-              : renderRequestItem
+                ? renderSuggestionItem
+                : renderRequestItem
           }
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContainer}
@@ -627,10 +751,10 @@ export default function AddFriendsScreen({ navigation }) {
                   activeTab === 'search'
                     ? 'search'
                     : activeTab === 'suggestions'
-                    ? 'people'
-                    : activeTab === 'received'
-                    ? 'person-add'
-                    : 'paper-plane'
+                      ? 'people'
+                      : activeTab === 'received'
+                        ? 'person-add'
+                        : 'paper-plane'
                 }
                 size={64}
                 color="#333"
@@ -639,16 +763,16 @@ export default function AddFriendsScreen({ navigation }) {
                 {activeTab === 'search'
                   ? 'Search for users to add as friends'
                   : activeTab === 'suggestions'
-                  ? 'No suggestions - follow people to see them here!'
-                  : activeTab === 'received'
-                  ? 'No friend requests'
-                  : 'No pending requests'}
+                    ? 'No suggestions - follow people to see them here!'
+                    : activeTab === 'received'
+                      ? 'No friend requests'
+                      : 'No pending requests'}
               </Text>
             </View>
           }
         />
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 

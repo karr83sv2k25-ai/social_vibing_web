@@ -33,6 +33,8 @@ export const MessageBox = React.forwardRef(({
   onAttachPress,
   onVoiceRecordStart,
   onVoiceRecordEnd,
+  onActivityPress,
+  onColorPickerPress,
   onFocus,
   placeholder = 'Message',
   isLoading = false,
@@ -157,17 +159,63 @@ export const MessageBox = React.forwardRef(({
       <View style={styles.inputBar}>
         {/* Left Actions */}
         <View style={styles.leftActions}>
-          <TouchableOpacity
-            onPress={onAttachPress}
-            style={styles.actionButton}
-            disabled={disabled}
-          >
-            <Ionicons
-              name="add-circle-outline"
-              size={24}
-              color={disabled ? '#444' : '#999'}
-            />
-          </TouchableOpacity>
+          {onAttachPress && (
+            <TouchableOpacity
+              onPress={onAttachPress}
+              style={styles.actionButton}
+              disabled={disabled}
+            >
+              <Ionicons
+                name="image-outline"
+                size={24}
+                color={disabled ? '#444' : '#7C3AED'}
+              />
+            </TouchableOpacity>
+          )}
+          {onVoiceRecordStart && !isRecording && (
+            <TouchableOpacity
+              onPress={onVoiceRecordStart}
+              style={styles.actionButton}
+              disabled={disabled}
+            >
+              <Ionicons
+                name="mic-outline"
+                size={24}
+                color={disabled ? '#444' : '#7C3AED'}
+              />
+            </TouchableOpacity>
+          )}
+          {onVoiceRecordStart && isRecording && (
+            <TouchableOpacity
+              onPress={onVoiceRecordEnd}
+              style={styles.actionButton}
+              disabled={disabled}
+            >
+              <Ionicons
+                name="stop"
+                size={24}
+                color="#ff4444"
+              />
+            </TouchableOpacity>
+          )}
+          {onActivityPress && (
+            <TouchableOpacity
+              onPress={onActivityPress}
+              style={styles.actionButton}
+              disabled={disabled}
+            >
+              <Text style={styles.partyEmoji}>🎉</Text>
+            </TouchableOpacity>
+          )}
+          {onColorPickerPress && (
+            <TouchableOpacity
+              onPress={onColorPickerPress}
+              style={styles.actionButton}
+              disabled={disabled}
+            >
+              <View style={[styles.colorIndicator, { backgroundColor: selectedColor || '#fff' }]} />
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Input Field - Wrap in Pressable to ensure emoji picker closes on tap */}
@@ -200,40 +248,25 @@ export const MessageBox = React.forwardRef(({
           />
         </Pressable>
 
-        {/* Right Action (Send or Mic) */}
-        {inputMode === 'send' ? (
-          <TouchableOpacity
-            onPress={handleSend}
-            style={[
-              styles.sendButton,
-              (!value.trim() || disabled || !isOnline) && styles.sendButtonDisabled
-            ]}
-            disabled={!value.trim() || isLoading || disabled || !isOnline}
-          >
-            {isLoading ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Ionicons
-                name="send"
-                size={20}
-                color={value.trim() && isOnline ? '#fff' : '#666'}
-              />
-            )}
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            onPressIn={handleMicPressIn}
-            onPressOut={handleMicPressOut}
-            style={[styles.micButton, isRecording && styles.micButtonRecording]}
-            disabled={disabled || !isOnline}
-          >
+        {/* Right Action (Send Button) */}
+        <TouchableOpacity
+          onPress={handleSend}
+          style={[
+            styles.sendButton,
+            (!value.trim() || disabled || !isOnline) && styles.sendButtonDisabled
+          ]}
+          disabled={!value.trim() || isLoading || disabled || !isOnline}
+        >
+          {isLoading ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
             <Ionicons
-              name={isRecording ? 'stop-circle' : 'mic'}
-              size={24}
-              color={isRecording ? '#ef4444' : '#999'}
+              name="send"
+              size={20}
+              color={value.trim() && isOnline ? '#fff' : '#666'}
             />
-          </TouchableOpacity>
-        )}
+          )}
+        </TouchableOpacity>
       </View>
 
       {/* Character Count */}
@@ -252,6 +285,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#1F1F25',
     paddingBottom: Platform.OS === 'ios' ? 20 : 10,
+    width: '100%',
   },
   statusBar: {
     flexDirection: 'row',
@@ -358,5 +392,15 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     color: '#666',
     fontSize: 11,
+  },
+  partyEmoji: {
+    fontSize: 24,
+  },
+  colorIndicator: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#444',
   },
 });

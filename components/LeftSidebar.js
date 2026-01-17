@@ -105,7 +105,7 @@ export default function LeftSidebar({ userProfile, wallet, stories, navigation }
                 <Text style={styles.sectionTitle}>Stories</Text>
                 <TouchableOpacity
                     style={styles.addStoryButton}
-                    onPress={() => navigation?.navigate('CreateStoryScreen')}
+                    onPress={() => navigation?.navigate('CreateStory')}
                 >
                     <LinearGradient
                         colors={['#BF2EF0', '#08FFE2']}

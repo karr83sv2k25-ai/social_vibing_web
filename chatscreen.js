@@ -54,20 +54,62 @@ const Avatar = ({ name, size = 34, color = ACCENT, source }) => {
       .join("");
   }, [name]);
 
-  return source ? (
-    <Image
-      source={source}
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        borderWidth: 1,
-        borderColor: `${color}88`,
-        backgroundColor: CARD,
-      }}
-      resizeMode="cover"
-    />
-  ) : (
+  // Debug logging
+  console.log('🖼️ Avatar component called:', {
+    name,
+    source,
+    sourceType: typeof source,
+    hasUri: source?.uri,
+    isNumber: typeof source === 'number',
+  });
+
+  // Check if source exists AND has a valid uri
+  if (source && source.uri && source.uri.trim()) {
+    console.log('✅ Rendering image with URI:', source.uri);
+    return (
+      <Image
+        source={source}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          borderWidth: 1,
+          borderColor: `${color}88`,
+          backgroundColor: CARD,
+        }}
+        resizeMode="cover"
+        onLoad={() => {
+          console.log('✅ Avatar loaded successfully:', source.uri);
+        }}
+        onError={(e) => {
+          console.log('❌ Avatar failed to load:', source.uri, e.nativeEvent);
+        }}
+      />
+    );
+  }
+
+  // Handle require() style sources
+  if (source && typeof source === 'number') {
+    console.log('✅ Rendering require() image');
+    return (
+      <Image
+        source={source}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          borderWidth: 1,
+          borderColor: `${color}88`,
+          backgroundColor: CARD,
+        }}
+        resizeMode="cover"
+      />
+    );
+  }
+
+  // Fallback to initials
+  console.log('⚠️ Falling back to initials for:', name);
+  return (
     <View
       style={{
         width: size,
@@ -89,15 +131,17 @@ export default function ChatScreen({ route, navigation }) {
   const scrollViewRef = useRef(null);
   const currentUser = auth.currentUser;
 
-  const user = route?.params?.user || {
-    name: "Ken Kaneki",
-    handle: "ghoul123@gmail.com",
-    avatar: FALLBACK_AVATAR,
-  };
+  // Initial user object from params
+  const [user, setUser] = useState({
+    name: route?.params?.userName || "Ken Kaneki",
+    handle: route?.params?.userHandle || "@user",
+    avatar: route?.params?.userAvatar ? { uri: route?.params?.userAvatar } : FALLBACK_AVATAR,
+    userId: route?.params?.otherUserId,
+  });
 
   const conversationId = route?.params?.conversationId;
-  const otherUserId = route?.params?.otherUserId || route?.params?.user?.userId;
-  const isGroupChat = route?.params?.isGroup || route?.params?.user?.isGroup || false;
+  const otherUserId = route?.params?.otherUserId;
+  const isGroupChat = route?.params?.isGroup || false;
 
   const [text, setText] = useState("");
   const [msgs, setMsgs] = useState([]);
@@ -249,6 +293,78 @@ export default function ChatScreen({ route, navigation }) {
     );
   };
 
+  // Fetch full user data from Firestore
+  useEffect(() => {
+    if (!otherUserId || isGroupChat) return;
+
+    const fetchUserData = async () => {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', otherUserId));
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+
+          console.log('👤 Fetching user data for:', otherUserId);
+          console.log('📸 Available avatar fields:', {
+            profileImage: userData.profileImage,
+            profilePicture: userData.profilePicture,
+            avatar: userData.avatar,
+            photoURL: userData.photoURL,
+          });
+
+          // Build display name - prioritize first + last name
+          let displayName = 'User';
+          if (userData.firstName || userData.lastName) {
+            const first = userData.firstName || '';
+            const last = userData.lastName || '';
+            displayName = `${first} ${last}`.trim();
+          } else if (userData.username) {
+            displayName = userData.username;
+          } else if (userData.displayName) {
+            displayName = userData.displayName;
+          } else if (userData.name) {
+            displayName = userData.name;
+          }
+
+          // Get profile picture - try multiple field names
+          const avatarUri = userData.profileImage ||
+            userData.profilePicture ||
+            userData.avatar ||
+            userData.photoURL ||
+            null;
+
+          console.log('✅ Final avatar URI:', avatarUri);
+          console.log('🔍 Avatar URI type:', typeof avatarUri);
+          console.log('🔍 Avatar URI length:', avatarUri?.length);
+
+          // Get username handle
+          const handle = userData.username ? `@${userData.username}` : '@user';
+
+          const finalAvatar = (avatarUri && typeof avatarUri === 'string' && avatarUri.trim())
+            ? { uri: avatarUri.trim() }
+            : FALLBACK_AVATAR;
+
+          console.log('🎯 Setting user with avatar:', {
+            name: displayName,
+            avatar: finalAvatar,
+            isRequire: typeof finalAvatar === 'number',
+            hasUri: finalAvatar?.uri,
+          });
+
+          setUser({
+            name: displayName,
+            handle: handle,
+            avatar: finalAvatar,
+            userId: otherUserId,
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching user data:', error);
+      }
+    };
+
+    fetchUserData();
+  }, [otherUserId, isGroupChat]);
+
   // Check if user is blocked
   useEffect(() => {
     if (!currentUser || !otherUserId) return;
@@ -267,6 +383,15 @@ export default function ChatScreen({ route, navigation }) {
 
     checkBlockStatus();
   }, [currentUser, otherUserId]);
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    if (msgs.length > 0) {
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: false });
+      }, 100);
+    }
+  }, [msgs.length]);
 
   // Fetch messages from Firestore (OPTIMIZED with caching and limit)
   useEffect(() => {
@@ -868,11 +993,14 @@ export default function ChatScreen({ route, navigation }) {
 
   // Handle party feature selection
   const handleFeatureSelect = (feature) => {
-    console.log('Feature selected:', feature);
+    console.log('🎯 Feature selected:', feature);
+    console.log('🎯 Feature type:', typeof feature);
+    console.log('🎯 Feature value check - is roleplay?', feature === 'roleplay');
     setShowFeatureModal(false);
     setTimeout(() => {
-      console.log('Setting showMiniScreen to:', feature);
+      console.log('🔧 Setting showMiniScreen to:', feature);
       setShowMiniScreen(feature);
+      console.log('✅ showMiniScreen has been set');
     }, 300);
   };
 
@@ -1049,9 +1177,8 @@ export default function ChatScreen({ route, navigation }) {
           <Avatar name={user.name} size={40} source={user.avatar} />
           <View style={{ marginLeft: 10 }}>
             <Text style={styles.headerName}>{user.name}</Text>
-            <Text style={styles.headerEmail}>{user.handle}</Text>
             {otherUserId && (
-              <View style={{ marginTop: 4 }}>
+              <View style={{ marginTop: 2 }}>
                 <SimpleInlineStatus
                   userId={otherUserId}
                 />
@@ -1075,8 +1202,9 @@ export default function ChatScreen({ route, navigation }) {
       {/* 💬 Chat Section */}
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 70 : 10} // ⬆️ Keyboard slightly higher
+        enabled={Platform.OS !== 'web'}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       >
         {loading ? (
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -1086,8 +1214,14 @@ export default function ChatScreen({ route, navigation }) {
         ) : (
           <ScrollView
             ref={scrollViewRef}
+            style={styles.messagesScroll}
             contentContainerStyle={styles.scrollContainer}
             showsVerticalScrollIndicator={false}
+            onContentSizeChange={() => {
+              setTimeout(() => {
+                scrollViewRef.current?.scrollToEnd({ animated: false });
+              }, 50);
+            }}
           >
             {msgs.length === 0 ? (
               <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 100 }}>
@@ -1444,11 +1578,16 @@ export default function ChatScreen({ route, navigation }) {
             <View style={styles.featureOptionsContainer}>
               <TouchableOpacity
                 style={styles.featureOption}
-                onPress={() => handleFeatureSelect('voice')}
+                activeOpacity={0.7}
+                onPress={() => {
+                  console.log('🎙️ Voice button pressed');
+                  handleFeatureSelect('voice');
+                }}
               >
                 <LinearGradient
                   colors={['#8B2EF0', '#6A1BB8']}
                   style={styles.featureGradient}
+                  pointerEvents="none"
                 >
                   <Ionicons name="mic" size={32} color="#fff" />
                   <Text style={styles.featureTitle}>Voice Chat</Text>
@@ -1458,11 +1597,16 @@ export default function ChatScreen({ route, navigation }) {
 
               <TouchableOpacity
                 style={styles.featureOption}
-                onPress={() => handleFeatureSelect('screening')}
+                activeOpacity={0.7}
+                onPress={() => {
+                  console.log('🎬 Screening button pressed');
+                  handleFeatureSelect('screening');
+                }}
               >
                 <LinearGradient
                   colors={['#FF6B6B', '#C92A2A']}
                   style={styles.featureGradient}
+                  pointerEvents="none"
                 >
                   <Ionicons name="film" size={32} color="#fff" />
                   <Text style={styles.featureTitle}>Screening Room</Text>
@@ -1472,11 +1616,16 @@ export default function ChatScreen({ route, navigation }) {
 
               <TouchableOpacity
                 style={styles.featureOption}
-                onPress={() => handleFeatureSelect('roleplay')}
+                activeOpacity={0.7}
+                onPress={() => {
+                  console.log('🎭 Roleplay button pressed');
+                  handleFeatureSelect('roleplay');
+                }}
               >
                 <LinearGradient
                   colors={['#FFD700', '#FFA500']}
                   style={styles.featureGradient}
+                  pointerEvents="none"
                 >
                   <MaterialCommunityIcons name="drama-masks" size={32} color="#fff" />
                   <Text style={styles.featureTitle}>Roleplay</Text>
@@ -1549,7 +1698,7 @@ export default function ChatScreen({ route, navigation }) {
       </Modal>
 
       {/* Roleplay Character Creation Screen - Multi-page System */}
-      {console.log('Roleplay Modal visible:', showMiniScreen === 'roleplay', 'showMiniScreen:', showMiniScreen)}
+      {console.log('🎭 Roleplay Modal Check - showMiniScreen:', showMiniScreen, '| Equals roleplay?', showMiniScreen === 'roleplay', '| Type:', typeof showMiniScreen)}
       <Modal
         visible={showMiniScreen === 'roleplay'}
         animationType="slide"
@@ -2048,6 +2197,8 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: BG,
     ...(isWeb && {
+      height: '100vh',
+      maxHeight: '100vh',
       alignItems: 'center',
     }),
   },
@@ -2056,6 +2207,7 @@ const styles = StyleSheet.create({
     ...(isWeb && {
       width: '100%',
       maxWidth: getContainerWidth(),
+      height: '100%',
     }),
   },
 
@@ -2065,8 +2217,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: getResponsivePadding(16),
-    paddingTop: 60,
-    paddingBottom: 10,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: "#1F1F25",
     ...(isWeb && {
@@ -2112,10 +2263,20 @@ const styles = StyleSheet.create({
     ...(isWeb && { cursor: 'pointer' }),
   },
 
+  messagesScroll: {
+    flex: 1,
+    ...(isWeb && {
+      overflowY: 'scroll',
+      WebkitOverflowScrolling: 'touch',
+    }),
+  },
   scrollContainer: {
     paddingHorizontal: getResponsivePadding(14),
     paddingTop: 20,
-    paddingBottom: 100,
+    paddingBottom: 20,
+    ...(isWeb && {
+      minHeight: '100%',
+    }),
   },
   bubbleRow: {
     flexDirection: "row",
@@ -2222,10 +2383,6 @@ const styles = StyleSheet.create({
   },
 
   composerBar: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
     padding: 10,
     backgroundColor: BG,
     flexDirection: "row",
@@ -2236,6 +2393,7 @@ const styles = StyleSheet.create({
     ...(isWeb && {
       maxWidth: getContainerWidth(),
       alignSelf: 'center',
+      width: '100%',
     }),
   },
   composerInner: {

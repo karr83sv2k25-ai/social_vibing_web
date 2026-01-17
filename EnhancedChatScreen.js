@@ -66,13 +66,15 @@ const Avatar = ({ name, size = 34, source }) => {
 };
 
 export default function EnhancedChatScreen({ route, navigation }) {
-  const user = route?.params?.user || {
-    name: "Ken Kaneki",
-    handle: "ghoul123@gmail.com",
-    avatar: FALLBACK_AVATAR,
+  // Construct user object from separate params (no more [object Object] in URL)
+  const user = {
+    name: route?.params?.userName || "Ken Kaneki",
+    handle: route?.params?.userHandle || "ghoul123@gmail.com",
+    avatar: route?.params?.userAvatar ? { uri: route?.params?.userAvatar } : FALLBACK_AVATAR,
+    id: route?.params?.otherUserId,
   };
 
-  const chatId = route?.params?.chatId || `chat_${user.id || user.name}`;
+  const chatId = route?.params?.chatId || route?.params?.conversationId || `chat_${user.id || user.name}`;
 
   // Use chat state hook
   const {
@@ -464,8 +466,8 @@ export default function EnhancedChatScreen({ route, navigation }) {
       {/* Messages */}
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 90}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       >
         <FlatList
           ref={flatListRef}
@@ -476,9 +478,11 @@ export default function EnhancedChatScreen({ route, navigation }) {
           showsVerticalScrollIndicator={false}
           onScroll={handleScroll}
           scrollEventThrottle={16}
-          maintainVisibleContentPosition={{
-            minIndexForVisible: 0,
-            autoscrollToTopThreshold: 10,
+          inverted={false}
+          onContentSizeChange={() => {
+            if (!isUserScrolling) {
+              flatListRef.current?.scrollToEnd({ animated: true });
+            }
           }}
         />
 
@@ -532,7 +536,8 @@ const styles = StyleSheet.create({
   messagesList: {
     paddingHorizontal: 14,
     paddingTop: 16,
-    paddingBottom: 20,
+    paddingBottom: 100,
+    flexGrow: 1,
   },
   messageRow: {
     flexDirection: "row",

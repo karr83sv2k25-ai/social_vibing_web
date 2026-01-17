@@ -3,21 +3,44 @@ import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import StatusBadge from './StatusBadge';
+import { useNavigation, useNavigationState } from '@react-navigation/native';
 
 export default function DesktopHeader({
     userProfile,
     onSearchPress,
     onNotificationsPress,
+    onAddFriendsPress,
     onSettingsPress,
     onProfilePress,
-    navigation
 }) {
-    const currentRoute = navigation?.getCurrentRoute?.()?.name || 'Home';
+    const navigation = useNavigation();
+
+    // Use useNavigationState hook to get current route
+    const currentRoute = useNavigationState(state => {
+        // Find the active route in the navigation state
+        if (!state || !state.routes) return 'Home';
+
+        const findActiveRoute = (routes, index) => {
+            const route = routes[index];
+            if (!route) return 'Home';
+
+            // If this route has nested state, go deeper
+            if (route.state && route.state.routes) {
+                return findActiveRoute(route.state.routes, route.state.index ?? 0);
+            }
+
+            return route.name;
+        };
+
+        return findActiveRoute(state.routes, state.index ?? 0);
+    });
+
+    console.log('🔍 DesktopHeader - Current Route:', currentRoute);
 
     return (
         <View style={styles.header}>
             {/* Left - Logo/Brand */}
-            <TouchableOpacity style={styles.logoSection} onPress={() => navigation?.navigate('Home')}>
+            <TouchableOpacity style={styles.logoSection} onPress={() => navigation?.navigate('TabBar', { screen: 'Home' })}>
                 <Text style={styles.logo}>Social Vibing</Text>
             </TouchableOpacity>
 
@@ -27,7 +50,7 @@ export default function DesktopHeader({
                 <View style={styles.navSection}>
                     <TouchableOpacity
                         style={[styles.navButton, currentRoute === 'Home' && styles.navButtonActive]}
-                        onPress={() => navigation?.navigate('Home')}
+                        onPress={() => navigation?.navigate('TabBar', { screen: 'Home' })}
                     >
                         <Ionicons
                             name={currentRoute === 'Home' ? 'home' : 'home-outline'}
@@ -39,7 +62,7 @@ export default function DesktopHeader({
 
                     <TouchableOpacity
                         style={[styles.navButton, currentRoute === 'Community' && styles.navButtonActive]}
-                        onPress={() => navigation?.navigate('Community')}
+                        onPress={() => navigation?.navigate('TabBar', { screen: 'Community' })}
                     >
                         <Ionicons
                             name={currentRoute === 'Community' ? 'people' : 'people-outline'}
@@ -50,20 +73,20 @@ export default function DesktopHeader({
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        style={[styles.navButton, currentRoute === 'MarketPlace' && styles.navButtonActive]}
-                        onPress={() => navigation?.navigate('MarketPlace')}
+                        style={[styles.navButton, (currentRoute === 'MarketPlace' || currentRoute === 'Marketplace') && styles.navButtonActive]}
+                        onPress={() => navigation?.navigate('TabBar', { screen: 'Marketplace' })}
                     >
                         <Ionicons
-                            name={currentRoute === 'MarketPlace' ? 'cart' : 'cart-outline'}
+                            name={(currentRoute === 'MarketPlace' || currentRoute === 'Marketplace') ? 'cart' : 'cart-outline'}
                             size={24}
-                            color={currentRoute === 'MarketPlace' ? '#08FFE2' : '#888'}
+                            color={(currentRoute === 'MarketPlace' || currentRoute === 'Marketplace') ? '#08FFE2' : '#888'}
                         />
-                        <Text style={[styles.navText, currentRoute === 'MarketPlace' && styles.navTextActive]}>Market</Text>
+                        <Text style={[styles.navText, (currentRoute === 'MarketPlace' || currentRoute === 'Marketplace') && styles.navTextActive]}>Market</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
                         style={[styles.navButton, currentRoute === 'Message' && styles.navButtonActive]}
-                        onPress={() => navigation?.navigate('Message')}
+                        onPress={() => navigation?.navigate('TabBar', { screen: 'Message' })}
                     >
                         <Ionicons
                             name={currentRoute === 'Message' ? 'chatbubbles' : 'chatbubbles-outline'}
@@ -91,6 +114,10 @@ export default function DesktopHeader({
                 <TouchableOpacity style={styles.iconButton} onPress={onNotificationsPress}>
                     <Ionicons name="notifications-outline" size={24} color="#fff" />
                     {/* Add notification badge if needed */}
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.iconButton} onPress={onAddFriendsPress}>
+                    <Ionicons name="person-add-outline" size={24} color="#fff" />
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.iconButton} onPress={onSettingsPress}>

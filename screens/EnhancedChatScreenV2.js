@@ -12,9 +12,11 @@ import {
   Alert,
   Clipboard,
   ActivityIndicator,
-  Keyboard
+  Keyboard,
+  ScrollView
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Audio } from 'expo-av';
 import {
   collection,
   query,
@@ -36,7 +38,7 @@ import { ScrollToBottomButton } from '../components/ScrollToBottomButton';
 import { SimpleInlineStatus } from '../components/StatusBadge';
 import EmojiSelector from 'react-native-emoji-selector';
 import * as ImagePicker from 'expo-image-picker';
-import { uploadImageToHostinger, uploadVideoToHostinger } from '../hostingerConfig';
+import { uploadImageToHostinger, uploadVideoToHostinger, uploadAudioToHostinger } from '../hostingerConfig';
 import {
   editMessage,
   deleteMessageForMe,
@@ -89,6 +91,13 @@ export default function EnhancedChatScreenV2({ route, navigation }) {
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [uploadProgress, setUploadProgress] = useState(null);
   const [otherUserData, setOtherUserData] = useState(null);
+  const [recording, setRecording] = useState(null);
+  const [recordingUri, setRecordingUri] = useState(null);
+  const [selectedTextColor, setSelectedTextColor] = useState('#fff');
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [showActivityModal, setShowActivityModal] = useState(false);
+
+  const textColors = ['#fff', '#FF4444', '#FF6B6B', '#FFA500', '#FFD700', '#4CAF50', '#00CED1', '#4169E1', '#8B2EF0', '#FF1493'];
 
   const flatListRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -149,11 +158,18 @@ export default function EnhancedChatScreenV2({ route, navigation }) {
         ...doc.data()
       }));
 
-      setMessages(msgs.reverse());
+      // Sort messages to handle null timestamps properly
+      const sortedMsgs = msgs.sort((a, b) => {
+        const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : Date.now();
+        const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : Date.now();
+        return timeB - timeA; // Descending order (newest first for inverted list)
+      });
+
+      setMessages(sortedMsgs);
       setLoading(false);
 
       // Mark as read
-      const unreadIds = msgs
+      const unreadIds = sortedMsgs
         .filter(m => m.senderId !== currentUserId && !m.status?.read?.[currentUserId])
         .map(m => m.id);
 
@@ -186,6 +202,7 @@ export default function EnhancedChatScreenV2({ route, navigation }) {
     // Immediately set sending state and clear text to prevent duplicate sends
     setSending(true);
     const textToSend = messageText;
+    const colorToSend = selectedTextColor;
     setMessageText('');
 
     try {
@@ -193,6 +210,7 @@ export default function EnhancedChatScreenV2({ route, navigation }) {
         senderId: currentUserId,
         text: textToSend,
         type: 'text',
+        textColor: colorToSend,
         createdAt: serverTimestamp(),
         status: {
           sent: serverTimestamp(),
@@ -344,191 +362,205 @@ export default function EnhancedChatScreenV2({ route, navigation }) {
 
   const handleAttachment = async () => {
     try {
-      Alert.alert(
-        'Send Attachment',
-        'Choose attachment type',
-        [
-          {
-            text: 'Photo/Video',
-            onPress: async () => {
-              const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-              if (!permission.granted) {
-                Alert.alert('Permission Required', 'Please grant photo library access to send images.');
-                return;
+      const handlePhotoVideo = async () => {
+        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!permission.granted) {
+          if (Platform.OS === 'web') {
+            window.alert('Please grant photo library access to send images.');
+          } else {
+            Alert.alert('Permission Required', 'Please grant photo library access to send images.');
+          }
+          return;
+        }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images', 'videos'],
+          allowsEditing: true,
+          quality: 0.8,
+          videoMaxDuration: 60,
+        });
+
+        if (!result.canceled && result.assets[0]) {
+          const asset = result.assets[0];
+
+          // On web, check if URI is accessible
+          if (Platform.OS === 'web' && asset.uri && asset.uri.startsWith('file://')) {
+            window.alert('Unable to access local file on web. Please try a different image.');
+            return;
+          }
+
+          setUploadProgress('Uploading...');
+
+          try {
+            let uploadedUrl;
+            if (asset.type === 'video') {
+              uploadedUrl = await uploadVideoToHostinger(asset.uri, 'chat_videos');
+            } else {
+              uploadedUrl = await uploadImageToHostinger(asset.uri, 'chat_images');
+            }
+
+            // Send message with attachment
+            const messageData = {
+              senderId: currentUserId,
+              type: asset.type === 'video' ? 'video' : 'image',
+              url: uploadedUrl,
+              createdAt: serverTimestamp(),
+              status: {
+                sent: serverTimestamp(),
+                delivered: {},
+                read: {}
               }
+            };
 
-              const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ['images', 'videos'],
-                allowsEditing: true,
-                quality: 0.8,
-                videoMaxDuration: 60,
-              });
+            // Add reply context if replying
+            if (replyTo) {
+              messageData.replyTo = {
+                messageId: replyTo.id,
+                senderId: replyTo.senderId,
+                text: replyTo.text,
+                type: replyTo.type
+              };
+              setReplyTo(null);
+            }
 
-              if (!result.canceled && result.assets[0]) {
-                const asset = result.assets[0];
+            await addDoc(
+              collection(db, 'conversations', conversationId, 'messages'),
+              messageData
+            );
 
-                // On web, check if URI is accessible
-                if (Platform.OS === 'web' && asset.uri && asset.uri.startsWith('file://')) {
-                  Alert.alert('Error', 'Unable to access local file on web. Please try a different image.');
+            // Update conversation last message
+            await updateDoc(doc(db, 'conversations', conversationId), {
+              lastMessage: {
+                text: asset.type === 'video' ? '📹 Video' : '📷 Photo',
+                senderId: currentUserId,
+                timestamp: serverTimestamp(),
+                type: asset.type === 'video' ? 'video' : 'image'
+              },
+              lastMessageTime: serverTimestamp()
+            });
+
+            setUploadProgress(null);
+
+            // Scroll to bottom
+            setTimeout(() => {
+              flatListRef.current?.scrollToEnd({ animated: true });
+            }, 100);
+          } catch (uploadError) {
+            console.error('Upload error:', uploadError);
+            setUploadProgress(null);
+            if (Platform.OS === 'web') {
+              window.alert('Upload Failed: Could not upload attachment. Please try again.');
+            } else {
+              Alert.alert('Upload Failed', 'Could not upload attachment. Please try again.');
+            }
+          }
+        }
+      };
+
+      if (Platform.OS === 'web') {
+        // On web, directly open photo/video picker
+        handlePhotoVideo();
+      } else {
+        // On mobile, show options
+        Alert.alert(
+          'Send Attachment',
+          'Choose attachment type',
+          [
+            {
+              text: 'Photo/Video',
+              onPress: handlePhotoVideo,
+            },
+            {
+              text: 'Camera',
+              onPress: async () => {
+                const permission = await ImagePicker.requestCameraPermissionsAsync();
+                if (!permission.granted) {
+                  Alert.alert('Permission Required', 'Please grant camera access to take photos.');
                   return;
                 }
 
-                setUploadProgress('Uploading...');
+                const result = await ImagePicker.launchCameraAsync({
+                  allowsEditing: true,
+                  quality: 0.8,
+                });
 
-                try {
-                  let uploadedUrl;
-                  if (asset.type === 'video') {
-                    uploadedUrl = await uploadVideoToHostinger(asset.uri, 'chat_videos');
-                  } else {
-                    uploadedUrl = await uploadImageToHostinger(asset.uri, 'chat_images');
-                  }
+                if (!result.canceled && result.assets[0]) {
+                  const asset = result.assets[0];
 
-                  // Send message with attachment
-                  const messageData = {
-                    senderId: currentUserId,
-                    type: asset.type === 'video' ? 'video' : 'image',
-                    url: uploadedUrl,
-                    createdAt: serverTimestamp(),
-                    status: {
-                      sent: serverTimestamp(),
-                      delivered: {},
-                      read: {}
-                    }
-                  };
+                  setUploadProgress('Uploading...');
 
-                  // Add reply context if replying
-                  if (replyTo) {
-                    messageData.replyTo = {
-                      messageId: replyTo.id,
-                      senderId: replyTo.senderId,
-                      text: replyTo.text,
-                      type: replyTo.type
-                    };
-                    setReplyTo(null);
-                  }
+                  try {
+                    const uploadedUrl = await uploadImageToHostinger(asset.uri, 'chat_images');
 
-                  await addDoc(
-                    collection(db, 'conversations', conversationId, 'messages'),
-                    messageData
-                  );
-
-                  // Update conversation last message
-                  await updateDoc(doc(db, 'conversations', conversationId), {
-                    lastMessage: {
-                      text: asset.type === 'video' ? '📹 Video' : '📷 Photo',
+                    // Send message with attachment
+                    const messageData = {
                       senderId: currentUserId,
-                      timestamp: serverTimestamp(),
-                      type: asset.type === 'video' ? 'video' : 'image'
-                    },
-                    lastMessageTime: serverTimestamp()
-                  });
-
-                  setUploadProgress(null);
-
-                  // Scroll to bottom
-                  setTimeout(() => {
-                    flatListRef.current?.scrollToEnd({ animated: true });
-                  }, 100);
-                } catch (uploadError) {
-                  console.error('Upload error:', uploadError);
-                  setUploadProgress(null);
-                  Alert.alert('Upload Failed', 'Could not upload attachment. Please try again.');
-                }
-              }
-            },
-          },
-          {
-            text: 'Camera',
-            onPress: async () => {
-              const permission = await ImagePicker.requestCameraPermissionsAsync();
-              if (!permission.granted) {
-                Alert.alert('Permission Required', 'Please grant camera access to take photos.');
-                return;
-              }
-
-              const result = await ImagePicker.launchCameraAsync({
-                allowsEditing: true,
-                quality: 0.8,
-              });
-
-              if (!result.canceled && result.assets[0]) {
-                const asset = result.assets[0];
-
-                // On web, check if URI is accessible
-                if (Platform.OS === 'web' && asset.uri && asset.uri.startsWith('file://')) {
-                  Alert.alert('Error', 'Unable to access local file on web. Please try a different image.');
-                  return;
-                }
-
-                setUploadProgress('Uploading...');
-
-                try {
-                  const uploadedUrl = await uploadImageToHostinger(asset.uri, 'chat_images');
-
-                  // Send message with attachment
-                  const messageData = {
-                    senderId: currentUserId,
-                    type: 'image',
-                    url: uploadedUrl,
-                    createdAt: serverTimestamp(),
-                    status: {
-                      sent: serverTimestamp(),
-                      delivered: {},
-                      read: {}
-                    }
-                  };
-
-                  // Add reply context if replying
-                  if (replyTo) {
-                    messageData.replyTo = {
-                      messageId: replyTo.id,
-                      senderId: replyTo.senderId,
-                      text: replyTo.text,
-                      type: replyTo.type
+                      type: 'image',
+                      url: uploadedUrl,
+                      createdAt: serverTimestamp(),
+                      status: {
+                        sent: serverTimestamp(),
+                        delivered: {},
+                        read: {}
+                      }
                     };
-                    setReplyTo(null);
+
+                    // Add reply context if replying
+                    if (replyTo) {
+                      messageData.replyTo = {
+                        messageId: replyTo.id,
+                        senderId: replyTo.senderId,
+                        text: replyTo.text,
+                        type: replyTo.type
+                      };
+                      setReplyTo(null);
+                    }
+
+                    await addDoc(
+                      collection(db, 'conversations', conversationId, 'messages'),
+                      messageData
+                    );
+
+                    // Update conversation last message
+                    await updateDoc(doc(db, 'conversations', conversationId), {
+                      lastMessage: {
+                        text: '📷 Photo',
+                        senderId: currentUserId,
+                        timestamp: serverTimestamp(),
+                        type: 'image'
+                      },
+                      lastMessageTime: serverTimestamp()
+                    });
+
+                    setUploadProgress(null);
+
+                    // Scroll to bottom
+                    setTimeout(() => {
+                      flatListRef.current?.scrollToEnd({ animated: true });
+                    }, 100);
+                  } catch (uploadError) {
+                    console.error('Upload error:', uploadError);
+                    setUploadProgress(null);
+                    Alert.alert('Upload Failed', 'Could not upload photo. Please try again.');
                   }
-
-                  await addDoc(
-                    collection(db, 'conversations', conversationId, 'messages'),
-                    messageData
-                  );
-
-                  // Update conversation last message
-                  await updateDoc(doc(db, 'conversations', conversationId), {
-                    lastMessage: {
-                      text: '📷 Photo',
-                      senderId: currentUserId,
-                      timestamp: serverTimestamp(),
-                      type: 'image'
-                    },
-                    lastMessageTime: serverTimestamp()
-                  });
-
-                  setUploadProgress(null);
-
-                  // Scroll to bottom
-                  setTimeout(() => {
-                    flatListRef.current?.scrollToEnd({ animated: true });
-                  }, 100);
-                } catch (uploadError) {
-                  console.error('Upload error:', uploadError);
-                  setUploadProgress(null);
-                  Alert.alert('Upload Failed', 'Could not upload photo. Please try again.');
                 }
-              }
+              },
             },
-          },
-          {
-            text: 'Cancel',
-            style: 'cancel',
-          },
-        ],
-        { cancelable: true }
-      );
+            {
+              text: 'Cancel',
+              style: 'cancel',
+            },
+          ],
+          { cancelable: true }
+        );
+      }
     } catch (error) {
       console.error('Attachment error:', error);
-      Alert.alert('Error', 'Failed to select attachment. Please try again.');
+      if (Platform.OS === 'web') {
+        window.alert('Error: Failed to select attachment. Please try again.');
+      } else {
+        Alert.alert('Error', 'Failed to select attachment. Please try again.');
+      }
     }
   };
 
@@ -567,14 +599,42 @@ export default function EnhancedChatScreenV2({ route, navigation }) {
     // Don't auto-focus back to input - keep emoji picker open
   };
 
-  const handleVoiceRecordStart = () => {
-    setIsRecording(true);
-    setRecordingDuration(0);
+  const handleVoiceRecordStart = async () => {
+    try {
+      const { status } = await Audio.requestPermissionsAsync();
+      if (status !== 'granted') {
+        if (Platform.OS === 'web') {
+          window.alert('Permission to record audio is required!');
+        } else {
+          Alert.alert('Permission Required', 'Permission to record audio is required!');
+        }
+        return;
+      }
 
-    // Start timer
-    recordingTimerRef.current = setInterval(() => {
-      setRecordingDuration(prev => prev + 1);
-    }, 1000);
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const { recording: newRecording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      setRecording(newRecording);
+      setIsRecording(true);
+      setRecordingDuration(0);
+
+      // Start timer
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration(prev => prev + 1);
+      }, 1000);
+    } catch (err) {
+      console.error('Failed to start recording', err);
+      if (Platform.OS === 'web') {
+        window.alert('Failed to start recording');
+      } else {
+        Alert.alert('Error', 'Failed to start recording');
+      }
+    }
   };
 
   const handleVoiceRecordEnd = async () => {
@@ -588,59 +648,106 @@ export default function EnhancedChatScreenV2({ route, navigation }) {
       setIsRecording(false);
       setRecordingDuration(0);
 
+      if (!recording) return;
+
+      await recording.stopAndUnloadAsync();
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+      });
+      const uri = recording.getURI();
+      setRecording(null);
+
       if (duration < 1) {
-        Alert.alert('Too Short', 'Voice message must be at least 1 second');
+        if (Platform.OS === 'web') {
+          window.alert('Voice message must be at least 1 second');
+        } else {
+          Alert.alert('Too Short', 'Voice message must be at least 1 second');
+        }
         return;
       }
 
-      // Create voice message
-      const messageData = {
-        senderId: currentUserId,
-        type: 'voice',
-        duration: duration,
-        createdAt: serverTimestamp(),
-        status: {
-          sent: serverTimestamp(),
-          delivered: {},
-          read: {}
-        }
-      };
+      // Upload audio file
+      setUploadProgress('Uploading audio...');
 
-      // Add reply context if replying
-      if (replyTo) {
-        messageData.replyTo = {
-          messageId: replyTo.id,
-          senderId: replyTo.senderId,
-          text: replyTo.text,
-          type: replyTo.type
-        };
-        setReplyTo(null);
-      }
+      try {
+        const audioUrl = await uploadAudioToHostinger(uri, 'chat_audio');
 
-      await addDoc(
-        collection(db, 'conversations', conversationId, 'messages'),
-        messageData
-      );
-
-      // Update conversation last message
-      await updateDoc(doc(db, 'conversations', conversationId), {
-        lastMessage: {
-          text: '🎤 Voice message',
+        // Create voice message
+        const messageData = {
           senderId: currentUserId,
-          timestamp: serverTimestamp(),
-          type: 'voice'
-        },
-        lastMessageTime: serverTimestamp()
-      });
+          type: 'voice',
+          url: audioUrl,
+          duration: duration,
+          createdAt: serverTimestamp(),
+          status: {
+            sent: serverTimestamp(),
+            delivered: {},
+            read: {}
+          }
+        };
 
-      // Scroll to bottom
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+        // Add reply context if replying
+        if (replyTo) {
+          messageData.replyTo = {
+            messageId: replyTo.id,
+            senderId: replyTo.senderId,
+            text: replyTo.text,
+            type: replyTo.type
+          };
+          setReplyTo(null);
+        }
+
+        await addDoc(
+          collection(db, 'conversations', conversationId, 'messages'),
+          messageData
+        );
+
+        // Update conversation last message
+        await updateDoc(doc(db, 'conversations', conversationId), {
+          lastMessage: {
+            text: '🎤 Voice message',
+            senderId: currentUserId,
+            timestamp: serverTimestamp(),
+            type: 'voice'
+          },
+          lastMessageTime: serverTimestamp()
+        });
+
+        setUploadProgress(null);
+
+        // Scroll to bottom
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      } catch (uploadError) {
+        console.error('Upload error:', uploadError);
+        setUploadProgress(null);
+        if (Platform.OS === 'web') {
+          window.alert('Could not upload audio. Please try again.');
+        } else {
+          Alert.alert('Upload Failed', 'Could not upload audio. Please try again.');
+        }
+      }
     } catch (error) {
-      console.error('Error ending voice recording:', error);
-      Alert.alert('Error', 'Failed to save voice message. Please try again.');
+      console.error('Voice record end error:', error);
+      if (Platform.OS === 'web') {
+        window.alert('Failed to save recording');
+      } else {
+        Alert.alert('Error', 'Failed to save recording');
+      }
     }
+  };
+
+  const handleActivityPress = () => {
+    Keyboard.dismiss();
+    setShowActivityModal(!showActivityModal);
+    setShowColorPicker(false);
+  };
+
+  const handleColorPickerPress = () => {
+    Keyboard.dismiss();
+    setShowColorPicker(!showColorPicker);
+    setShowActivityModal(false);
   };
 
   const handleScroll = (event) => {
@@ -713,7 +820,13 @@ export default function EnhancedChatScreenV2({ route, navigation }) {
             {otherUserData?.profileImage ? (
               <Image
                 source={{ uri: otherUserData.profileImage }}
-                style={styles.userAvatar}
+                style={[
+                  styles.userAvatar,
+                  Platform.OS === 'web' && { objectFit: 'cover' }
+                ]}
+                onError={(e) => {
+                  console.log('❌ Failed to load user avatar:', otherUserData.profileImage);
+                }}
               />
             ) : (
               <View style={styles.userAvatarPlaceholder}>
@@ -777,23 +890,33 @@ export default function EnhancedChatScreenV2({ route, navigation }) {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
-        {/* Messages */}
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <MessageItem
-              message={item}
-              currentUserId={currentUserId}
-              onLongPress={handleMessageLongPress}
-              onReact={handleReact}
-            />
-          )}
-          onScroll={handleScroll}
-          scrollEventThrottle={16}
-          contentContainerStyle={styles.messagesList}
-        />
+        {/* Messages Container */}
+        <View style={{ flex: 1 }}>
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <MessageItem
+                message={item}
+                currentUserId={currentUserId}
+                onLongPress={handleMessageLongPress}
+                onReact={handleReact}
+              />
+            )}
+            inverted
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            contentContainerStyle={styles.messagesList}
+            showsVerticalScrollIndicator={true}
+            onContentSizeChange={() => {
+              // Auto-scroll to bottom when new message arrives
+              if (!showScrollButton) {
+                flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+              }
+            }}
+          />
+        </View>
 
         {/* Scroll to bottom button */}
         {showScrollButton && (
@@ -837,12 +960,94 @@ export default function EnhancedChatScreenV2({ route, navigation }) {
           onEmojiPress={handleEmojiPress}
           onVoiceRecordStart={handleVoiceRecordStart}
           onVoiceRecordEnd={handleVoiceRecordEnd}
+          onActivityPress={handleActivityPress}
+          onColorPickerPress={handleColorPickerPress}
+          selectedColor={selectedTextColor}
           sending={sending}
           inputMode={messageText.trim() ? 'send' : 'mic'}
           isRecording={isRecording}
           recordingDuration={recordingDuration}
           placeholder={editMode ? 'Edit message...' : 'Message'}
         />
+
+        {/* Color Picker */}
+        {showColorPicker && (
+          <View style={styles.colorPickerContainer}>
+            <Text style={styles.colorPickerTitle}>Choose Text Color</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.colorPickerScroll}
+              contentContainerStyle={styles.colorPickerContent}
+            >
+              {textColors.map((color, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={[
+                    styles.colorItem,
+                    { backgroundColor: color },
+                    selectedTextColor === color && styles.colorItemSelected
+                  ]}
+                  onPress={() => {
+                    setSelectedTextColor(color);
+                    setShowColorPicker(false);
+                    messageInputRef.current?.focus();
+                  }}
+                >
+                  {selectedTextColor === color && (
+                    <Ionicons name="checkmark" size={20} color={color === '#fff' ? '#000' : '#fff'} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* Activity Modal */}
+        {showActivityModal && (
+          <View style={styles.activityModalContainer}>
+            <Text style={styles.activityModalTitle}>Activity Options</Text>
+            <TouchableOpacity
+              style={styles.activityOption}
+              onPress={() => {
+                setShowActivityModal(false);
+                navigation.navigate('GroupAudioCall', {
+                  conversationId: conversationId,
+                  conversationName: isGroup ? groupName : otherUserData?.name || 'User'
+                });
+              }}
+            >
+              <Ionicons name="call" size={24} color="#00CED1" />
+              <Text style={styles.activityOptionText}>Voice Chat</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.activityOption}
+              onPress={() => {
+                setShowActivityModal(false);
+                navigation.navigate('ScreenSharingRoom', {
+                  conversationId: conversationId,
+                  conversationName: isGroup ? groupName : otherUserData?.name || 'User'
+                });
+              }}
+            >
+              <Ionicons name="tv" size={24} color="#DA70D6" />
+              <Text style={styles.activityOptionText}>Screen Sharing</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.activityOption}
+              onPress={() => {
+                setShowActivityModal(false);
+                navigation.navigate('Roleplay', {
+                  conversationId: conversationId,
+                  conversationName: isGroup ? groupName : otherUserData?.name || 'User'
+                });
+              }}
+            >
+              <Ionicons name="people" size={24} color="#FFA500" />
+              <Text style={styles.activityOptionText}>Roleplay</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Emoji Picker */}
         {showEmojiPicker && (
@@ -889,7 +1094,8 @@ export default function EnhancedChatScreenV2({ route, navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: BG
+    backgroundColor: BG,
+    ...(Platform.OS === 'web' && { height: '100vh' })
   },
   centered: {
     alignItems: 'center',
@@ -967,7 +1173,8 @@ const styles = StyleSheet.create({
     marginTop: 2
   },
   messagesList: {
-    paddingVertical: 8
+    paddingVertical: 16,
+    flexGrow: 1,
   },
   replyPreview: {
     flexDirection: 'row',
@@ -1054,6 +1261,70 @@ const styles = StyleSheet.create({
   uploadProgressText: {
     color: '#fff',
     fontSize: 14,
+    fontWeight: '500',
+  },
+  colorPickerContainer: {
+    backgroundColor: '#1a1a1a',
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+  },
+  colorPickerTitle: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  colorPickerScroll: {
+    maxHeight: 80,
+  },
+  colorPickerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 4,
+  },
+  colorItem: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#444',
+  },
+  colorItemSelected: {
+    borderWidth: 3,
+    borderColor: '#7C3AED',
+  },
+  activityModalContainer: {
+    backgroundColor: '#1a1a1a',
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+  },
+  activityModalTitle: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  activityOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: CARD,
+    borderRadius: 8,
+    marginBottom: 8,
+    gap: 12,
+  },
+  activityOptionText: {
+    color: '#fff',
+    fontSize: 16,
     fontWeight: '500',
   },
 });

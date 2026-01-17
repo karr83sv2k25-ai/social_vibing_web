@@ -207,8 +207,12 @@ import EnhancedChatScreen from './EnhancedChatScreen';
 
 // 3. Navigate
 navigation.navigate('Chat', {
-  chatId: 'chat_123',
-  user: { name: 'John', avatar: 'url' }
+  conversationId: 'chat_123',
+  otherUserId: 'user_456',
+  isGroup: false,
+  userName: 'John Doe',
+  userHandle: 'john@example.com',
+  userAvatar: 'https://example.com/avatar.jpg'
 });
 ```
 
@@ -453,3 +457,5 @@ This implementation is:
 **Status**: ✅ Production Ready
 
 **Last Updated**: November 2025
+#   s o c i a l _ v i b i n g _ w e b  
+ 

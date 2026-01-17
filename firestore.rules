@@ -14,9 +14,10 @@ service cloud.firestore {
     
     // ========== MARKETPLACE COLLECTIONS ==========
     
-    // Wallets - users can only read/write their own
+    // Wallets - users can read/write their own, but can read others for display purposes
     match /wallets/{userId} {
-      allow read, write: if isSignedIn() && isOwner(userId);
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isOwner(userId);
     }
     
     // Products - anyone can read, authenticated users can create
@@ -123,12 +124,12 @@ service cloud.firestore {
     
     // Communities collection
     match /communities/{communityId} {
-      allow read: if isSignedIn();
+      allow read: if true; // Allow public read for communities
       allow write: if isSignedIn();
       
       // Posts subcollection
       match /posts/{postId} {
-        allow read: if isSignedIn();
+        allow read: if true; // Allow public read for posts
         allow create: if isSignedIn();
         allow update: if isSignedIn();
         allow delete: if isSignedIn() && 

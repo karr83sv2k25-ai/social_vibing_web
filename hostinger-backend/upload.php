@@ -52,16 +52,25 @@ function sendResponse($success, $data = null, $error = null, $code = 200) {
 
 // Verify API key (if enabled)
 function verifyApiKey() {
-    if (!defined('API_KEY') || API_KEY === 'your-secret-api-key-here') {
+    if (!defined('API_KEY') || API_KEY === 'your-secret-api-key-here' || empty(API_KEY)) {
+        error_log('API Key verification SKIPPED - not configured');
         return true; // Skip verification if not configured
     }
     
     $headers = getallheaders();
     $providedKey = $headers['X-API-Key'] ?? $_POST['api_key'] ?? null;
     
+    error_log('API Key Check - Header X-API-Key: ' . ($headers['X-API-Key'] ?? 'NOT SET'));
+    error_log('API Key Check - POST api_key: ' . ($_POST['api_key'] ?? 'NOT SET'));
+    error_log('API Key Check - Expected: ' . API_KEY);
+    error_log('API Key Check - Provided: ' . ($providedKey ?? 'NULL'));
+    
     if ($providedKey !== API_KEY) {
-        sendResponse(false, null, 'Invalid API key', 401);
+        error_log('API Key MISMATCH - Authentication failed');
+        sendResponse(false, null, 'Invalid API key. Please check your configuration.', 401);
     }
+    error_log('API Key verification PASSED');
+    return true;
 }
 
 // Sanitize filename
@@ -118,15 +127,19 @@ function handleUpload() {
     try {
         // Log request for debugging
         error_log("=== Upload Request Started ===");
+        error_log("REQUEST_METHOD: " . $_SERVER['REQUEST_METHOD']);
+        error_log("CONTENT_TYPE: " . ($_SERVER['CONTENT_TYPE'] ?? 'not set'));
         error_log("POST data: " . print_r($_POST, true));
         error_log("FILES data: " . print_r($_FILES, true));
+        error_log("Raw input: " . file_get_contents('php://input', false, null, 0, 500));
         
         // Verify API key
         verifyApiKey();
         
         // Check if file was uploaded
         if (!isset($_FILES['file'])) {
-            error_log("ERROR: No file uploaded");
+            error_log("ERROR: No file uploaded - \$_FILES array is empty");
+            error_log("Available \$_FILES keys: " . implode(', ', array_keys($_FILES)));
             sendResponse(false, null, 'No file uploaded', 400);
         }
         
@@ -135,6 +148,7 @@ function handleUpload() {
         $folder = $_POST['folder'] ?? 'general'; // Optional subfolder
         
         error_log("Upload type: $type, folder: $folder");
+        error_log("File details: name={$file['name']}, size={$file['size']}, tmp_name={$file['tmp_name']}");
         
         // Check for upload errors
         if ($file['error'] !== UPLOAD_ERR_OK) {
