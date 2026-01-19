@@ -8,6 +8,12 @@ import { app as firebaseApp, db } from './firebaseConfig';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { StatusProvider } from './contexts/StatusContext';
 import { WalletProvider } from './context/WalletContext';
+
+// Import web-specific CSS for scroll fixes
+if (Platform.OS === 'web') {
+  require('./web-styles.css');
+}
+
 // import './testFirebaseREST';
 // import './diagnoseFirestore';
 
@@ -57,6 +63,7 @@ import LoginScreen from './loginscreen';
 import SignupScreen from './signupscreen';
 import HomeScreen from './homescreen';
 import TabBarScreen from './tabbarview';
+import LandingScreen from './LandingScreen';
 
 // Lazy load all other screens
 const WithPhoneScreen = React.lazy(() => import('./withphonescreen'));
@@ -180,16 +187,19 @@ export default function App() {
     console.log('🚀 App.js mounted - checking authentication...');
     const auth = getAuth(firebaseApp);
 
-    // Check if user has seen splash screens
-    AsyncStorage.getItem('hasSeenSplash')
-      .then(value => {
-        console.log('👁️ Has seen splash:', value);
-        // If null/undefined, it means they haven't seen it yet
-        setHasSeenSplash(value === 'true');
+    // Check if user has seen splash screens and if they're a new signup
+    Promise.all([
+      AsyncStorage.getItem('hasSeenSplash'),
+      AsyncStorage.getItem('isNewSignup')
+    ])
+      .then(([seenSplash, isNew]) => {
+        console.log('👁️ Has seen splash:', seenSplash, 'Is new signup:', isNew);
+        // Show splash only if this is a new signup and they haven't seen it
+        setHasSeenSplash(seenSplash === 'true' || isNew !== 'true');
       })
       .catch(err => {
         console.log('⚠️ Error checking splash state:', err);
-        setHasSeenSplash(false); // Default to false - they haven't seen it
+        setHasSeenSplash(true); // Default to true - don't show splash on error
       });
 
     // Check current auth state immediately
@@ -328,8 +338,8 @@ export default function App() {
     if (user && !hasSeenSplash) {
       return 'Splash';
     }
-    // Show appropriate screen based on auth state
-    return user ? 'TabBar' : 'Login';
+    // Show landing page first if not authenticated
+    return user ? 'TabBar' : 'Landing';
   };
 
   return (
@@ -343,6 +353,7 @@ export default function App() {
             prefixes: ['http://localhost:8081', 'https://socialvibing.app'],
             config: {
               screens: {
+                Landing: 'landing',
                 Login: 'login',
                 Signup: 'signup',
                 Splash: 'welcome',
@@ -381,6 +392,7 @@ export default function App() {
             {!user ? (
               // Unauthenticated screens - only show login/signup flow
               <>
+                <Stack.Screen name="Landing" component={LandingScreen} />
                 <Stack.Screen name="Login" component={LoginScreen} />
                 <Stack.Screen name="Signup" component={SignupScreen} />
                 <Stack.Screen name="WithPhone" component={WithPhoneScreen} />

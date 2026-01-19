@@ -5,7 +5,9 @@ import {
   ImageBackground,
   StyleSheet,
   TouchableOpacity,
+  Platform,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import {
   useFonts,
   Manrope_700Bold,
@@ -56,6 +58,16 @@ export default function LoginScreen({ navigation }) {
       source={require('./assets/login_bg.png')}
       style={styles.background}
       resizeMode="cover">
+      {/* Back Button */}
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => navigation.goBack()}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="arrow-back" size={24} color="#fff" />
+        <Text style={styles.backButtonText}>Back</Text>
+      </TouchableOpacity>
+
       <View style={styles.headingContainer}>
         <Text style={styles.logo}>Social Vibing</Text>
         <Text style={styles.subtitle}>Social Vibing</Text>
@@ -86,6 +98,24 @@ const styles = StyleSheet.create({
     height: '100%',
     justifyContent: 'space-between',
     paddingBottom: 100,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    position: 'absolute',
+    top: Platform.OS === 'web' ? 20 : 50,
+    left: 20,
+    zIndex: 10,
+    gap: 8,
+    ...(Platform.OS === 'web' && {
+      cursor: 'pointer',
+    }),
+  },
+  backButtonText: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 16,
+    color: '#fff',
+    fontWeight: 'bold',
   },
   headingContainer: {
     alignItems: 'center',

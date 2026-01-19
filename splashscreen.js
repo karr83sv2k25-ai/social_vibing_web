@@ -50,9 +50,10 @@ export default function SplashScreens({ navigation }) {
   }, []);
 
   const navigateToApp = async () => {
-    // Mark that user has seen splash screens
+    // Mark that user has seen splash screens and clear new signup flag
     try {
       await AsyncStorage.setItem('hasSeenSplash', 'true');
+      await AsyncStorage.removeItem('isNewSignup');
       console.log('✅ hasSeenSplash set to true - user has completed welcome screens');
     } catch (error) {
       console.log('Error saving splash screen state:', error);
@@ -113,46 +114,49 @@ export default function SplashScreens({ navigation }) {
   // Splash 1 & 2
   if (screen === 1 || screen === 2) {
     return (
-      <ImageBackground
-        source={
-          screen === 1
-            ? require('./assets/splash1.png')
-            : require('./assets/splash2.png')
-        }
-        style={[styles.background, isDesktop && styles.backgroundDesktop]}
-        resizeMode="cover">
-        <View style={[styles.overlayLeft, isDesktop && styles.overlayDesktop]}>
-          <Text style={[styles.titleLeft, isDesktop && styles.titleDesktop]}>
-            {screen === 1 ? 'Welcome to Social Vibing!' : 'Connect & Share'}
-          </Text>
-          <Text style={[styles.subTextLeft, isDesktop && styles.subTextDesktop]}>
-            {screen === 1
-              ? 'Join our vibrant community to share\nmoments, chat, and connect with friends'
-              : 'Create communities, share experiences,\nand vibe with like-minded people'}
-          </Text>
+      <View style={{ flex: 1 }}>
+        <ImageBackground
+          source={
+            screen === 1
+              ? require('./assets/splash1.png')
+              : require('./assets/splash2.png')
+          }
+          style={[styles.background, isDesktop && styles.backgroundDesktop]}
+          resizeMode="cover"
+          imageStyle={{ opacity: 1 }}>
+          <View style={[styles.overlayLeft, isDesktop && styles.overlayDesktop]}>
+            <Text style={[styles.titleLeft, isDesktop && styles.titleDesktop]}>
+              {screen === 1 ? 'Welcome to Social Vibing!' : 'Connect & Share'}
+            </Text>
+            <Text style={[styles.subTextLeft, isDesktop && styles.subTextDesktop]}>
+              {screen === 1
+                ? 'Join our vibrant community to share\nmoments, chat, and connect with friends'
+                : 'Create communities, share experiences,\nand vibe with like-minded people'}
+            </Text>
 
-          {/* Centered Dots */}
-          <View style={[styles.dotsContainerCenter, isDesktop && styles.dotsContainerDesktop]}>
-            <View
-              style={[styles.dot, screen === 1 ? styles.activeDot : null]}
-            />
-            <View
-              style={[styles.dot, screen === 2 ? styles.activeDot : null]}
-            />
-            <View
-              style={[styles.dot, screen === 3 ? styles.activeDot : null]}
-            />
+            {/* Centered Dots */}
+            <View style={[styles.dotsContainerCenter, isDesktop && styles.dotsContainerDesktop]}>
+              <View
+                style={[styles.dot, screen === 1 ? styles.activeDot : null]}
+              />
+              <View
+                style={[styles.dot, screen === 2 ? styles.activeDot : null]}
+              />
+              <View
+                style={[styles.dot, screen === 3 ? styles.activeDot : null]}
+              />
+            </View>
           </View>
-        </View>
 
-        {/* ✅ Next Button with Arrow Icon */}
-        <TouchableOpacity
-          onPress={handleNext}
-          activeOpacity={0.8}
-          style={[styles.nextButtonRight, isDesktop && styles.nextButtonDesktop]}>
-          <Ionicons name="arrow-forward" size={22} color="#fff" />
-        </TouchableOpacity>
-      </ImageBackground>
+          {/* ✅ Next Button with Arrow Icon */}
+          <TouchableOpacity
+            onPress={handleNext}
+            activeOpacity={0.8}
+            style={[styles.nextButtonRight, isDesktop && styles.nextButtonDesktop]}>
+            <Ionicons name="arrow-forward" size={22} color="#fff" />
+          </TouchableOpacity>
+        </ImageBackground>
+      </View>
     );
   }
 

@@ -3,6 +3,7 @@ import { View, Text, ImageBackground, TouchableOpacity, StyleSheet } from 'react
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   useFonts,
   Manrope_700Bold,
@@ -19,8 +20,15 @@ export default function AgeVerificationScreen({ navigation }) {
 
   if (!fontsLoaded) return null;
 
-  const handleEnter = () => {
-    navigation.navigate('TabBar'); // Navigate to main app
+  const handleEnter = async () => {
+    // Mark that this is a new user signup (hasn't seen splash yet)
+    try {
+      await AsyncStorage.setItem('isNewSignup', 'true');
+      console.log('✅ New user marked for welcome screens');
+    } catch (error) {
+      console.log('Error marking new user:', error);
+    }
+    navigation.navigate('Splash'); // Navigate to welcome screens for new users
   };
 
   return (

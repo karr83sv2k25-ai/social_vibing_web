@@ -1,0 +1,31 @@
+/* Global Web Styles for Scroll Fix */
+
+
+html,
+body,
+#root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    overflow: hidden;
+}
+
+#root {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Ensure no parent containers block scroll */
+* {
+    box-sizing: border-box;
+}
+
+/* React Native Web wrapper fixes */
+#root>div {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
